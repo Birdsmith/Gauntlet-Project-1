@@ -63,13 +63,25 @@ export default function UserList() {
       )
     }
 
-    // Listen for user status updates
+    const handleNewUser = (newUser: User) => {
+      setUsers((prevUsers) => {
+        // Check if user already exists
+        if (prevUsers.some(user => user.id === newUser.id)) {
+          return prevUsers
+        }
+        return [...prevUsers, newUser]
+      })
+    }
+
+    // Listen for user events
     socket.on('userStatus', handleUserStatus)
     socket.on('profile-update', handleProfileUpdate)
+    socket.on('new-user', handleNewUser)
 
     return () => {
       socket.off('userStatus', handleUserStatus)
       socket.off('profile-update', handleProfileUpdate)
+      socket.off('new-user', handleNewUser)
     }
   }, [socket])
 

@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
+import { unlink } from 'fs/promises'
+import path from 'path'
 
 export async function GET(
   req: Request,
@@ -108,9 +110,16 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Check if channel exists
+    // Check if channel exists and get all associated files
     const channel = await prisma.channel.findUnique({
       where: { id: params.channelId },
+      include: {
+        messages: {
+          include: {
+            files: true
+          }
+        }
+      }
     })
 
     if (!channel) {
@@ -120,15 +129,59 @@ export async function DELETE(
       )
     }
 
-    // Delete all messages in the channel first
-    await prisma.message.deleteMany({
-      where: { channelId: params.channelId },
+    // Collect all file paths that need to be deleted
+    const filePaths = channel.messages
+      .flatMap(message => message.files)
+      .map(file => {
+        const filename = file.url.split('/').pop()
+        return path.join(process.cwd(), 'public', 'uploads', filename!)
+      })
+
+    // Start a transaction to ensure all database deletions succeed or none do
+    await prisma.$transaction(async (tx) => {
+      // 1. Delete all reactions in messages of this channel
+      await tx.reaction.deleteMany({
+        where: {
+          message: {
+            channelId: params.channelId
+          }
+        }
+      })
+
+      // 2. Delete all files associated with messages in this channel
+      await tx.file.deleteMany({
+        where: {
+          message: {
+            channelId: params.channelId
+          }
+        }
+      })
+
+      // 3. Delete all messages in the channel
+      await tx.message.deleteMany({
+        where: { channelId: params.channelId }
+      })
+
+      // 4. Delete the channel itself
+      await tx.channel.delete({
+        where: { id: params.channelId }
+      })
     })
 
-    // Delete the channel
-    await prisma.channel.delete({
-      where: { id: params.channelId },
-    })
+    // After successful database deletion, delete the physical files
+    await Promise.allSettled(
+      filePaths.map(filePath => 
+        unlink(filePath).catch(err => 
+          console.error(`Failed to delete file ${filePath}:`, err)
+        )
+      )
+    )
+
+    // Emit channel deletion event through Socket.IO
+    const globalSocket = (global as any).socketIo
+    if (globalSocket) {
+      globalSocket.emit('channel-deleted', params.channelId)
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {

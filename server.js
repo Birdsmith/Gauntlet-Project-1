@@ -31,8 +31,11 @@ app.prepare().then(() => {
     pingTimeout: 60000,
     pingInterval: 25000,
     transports: ['websocket', 'polling'],
-    allowEIO3: true, // Allow Engine.IO version 3 clients
+    allowEIO3: true,
   })
+
+  // Store the Socket.IO instance globally for access from API routes
+  global.socketIo = io
 
   // Debug middleware for all socket events
   io.engine.on("connection_error", (err) => {
