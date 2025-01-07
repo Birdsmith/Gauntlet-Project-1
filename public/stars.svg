@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="400" height="400" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+  <!-- Small stars -->
+  <circle cx="50" cy="50" r="1" fill="white" opacity="0.5" />
+  <circle cx="150" cy="30" r="1" fill="white" opacity="0.7" />
+  <circle cx="250" cy="70" r="1" fill="white" opacity="0.6" />
+  <circle cx="350" cy="40" r="1" fill="white" opacity="0.5" />
+  <circle cx="100" cy="100" r="1" fill="white" opacity="0.6" />
+  <circle cx="200" cy="120" r="1" fill="white" opacity="0.7" />
+  <circle cx="300" cy="150" r="1" fill="white" opacity="0.5" />
+  <circle cx="380" cy="180" r="1" fill="white" opacity="0.6" />
+  
+  <!-- Medium stars -->
+  <circle cx="80" cy="200" r="1.5" fill="white" opacity="0.6" />
+  <circle cx="180" cy="250" r="1.5" fill="white" opacity="0.7" />
+  <circle cx="280" cy="220" r="1.5" fill="white" opacity="0.5" />
+  <circle cx="360" cy="280" r="1.5" fill="white" opacity="0.6" />
+  <circle cx="120" cy="300" r="1.5" fill="white" opacity="0.7" />
+  <circle cx="220" cy="350" r="1.5" fill="white" opacity="0.5" />
+  <circle cx="320" cy="330" r="1.5" fill="white" opacity="0.6" />
+  
+  <!-- Large stars with glow -->
+  <circle cx="30" cy="150" r="2" fill="white" opacity="0.8">
+    <animate attributeName="opacity" values="0.8;0.4;0.8" dur="3s" repeatCount="indefinite" />
+  </circle>
+  <circle cx="130" cy="200" r="2" fill="white" opacity="0.8">
+    <animate attributeName="opacity" values="0.8;0.4;0.8" dur="4s" repeatCount="indefinite" />
+  </circle>
+  <circle cx="230" cy="180" r="2" fill="white" opacity="0.8">
+    <animate attributeName="opacity" values="0.8;0.4;0.8" dur="5s" repeatCount="indefinite" />
+  </circle>
+  <circle cx="330" cy="100" r="2" fill="white" opacity="0.8">
+    <animate attributeName="opacity" values="0.8;0.4;0.8" dur="3.5s" repeatCount="indefinite" />
+  </circle>
+  
+  <!-- Extra small stars for depth -->
+  <circle cx="40" cy="250" r="0.5" fill="white" opacity="0.4" />
+  <circle cx="140" cy="270" r="0.5" fill="white" opacity="0.5" />
+  <circle cx="240" cy="290" r="0.5" fill="white" opacity="0.4" />
+  <circle cx="340" cy="310" r="0.5" fill="white" opacity="0.5" />
+  <circle cx="90" cy="330" r="0.5" fill="white" opacity="0.4" />
+  <circle cx="190" cy="350" r="0.5" fill="white" opacity="0.5" />
+  <circle cx="290" cy="370" r="0.5" fill="white" opacity="0.4" />
+  <circle cx="370" cy="390" r="0.5" fill="white" opacity="0.5" />
+</svg> 
