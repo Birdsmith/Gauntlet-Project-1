@@ -8,21 +8,26 @@ export function useSocket() {
   const socketRef = useRef<Socket | null>(null)
   const [isConnected, setIsConnected] = useState(false)
   const { toast } = useToast()
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout>()
 
   const initSocket = useCallback(async () => {
     try {
+      // Clear any existing reconnection timeout
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+      }
+
       if (!socketRef.current) {
-        // Always use port 3001 for socket connection
         const socketUrl = 'http://localhost:3001'
         console.log('Initializing socket connection to:', socketUrl)
 
         socketRef.current = io(socketUrl, {
-          transports: ['websocket', 'polling'], // Allow fallback to polling
+          transports: ['websocket', 'polling'],
           withCredentials: true,
-          reconnectionAttempts: Infinity, // Keep trying to reconnect
+          reconnectionAttempts: 5,
           reconnectionDelay: 1000,
-          reconnectionDelayMax: 5000, // Cap the delay at 5 seconds
-          timeout: 10000, // Increase connection timeout
+          reconnectionDelayMax: 5000,
+          timeout: 10000,
           autoConnect: true,
         })
 
@@ -49,14 +54,17 @@ export function useSocket() {
           console.error('Socket connection error:', error.message)
           setIsConnected(false)
           
-          // Only show toast for the first connection error
-          if (!socketRef.current?.connected) {
-            toast({
-              title: 'Connection error',
-              description: 'Unable to connect to chat server. Retrying...',
-              variant: 'destructive',
-            })
-          }
+          // Schedule a reconnection attempt after 2 seconds
+          reconnectTimeoutRef.current = setTimeout(() => {
+            console.log('Attempting to reconnect socket...')
+            // Clean up the old socket
+            if (socketRef.current) {
+              socketRef.current.disconnect()
+              socketRef.current = null
+            }
+            // Try to initialize again
+            initSocket()
+          }, 2000)
         })
 
         socketRef.current.on('reconnect', (attemptNumber: number) => {
@@ -88,18 +96,21 @@ export function useSocket() {
     } catch (error) {
       console.error('Socket initialization error:', error)
       setIsConnected(false)
-      toast({
-        title: 'Connection error',
-        description: 'Failed to initialize chat connection',
-        variant: 'destructive',
-      })
+      
+      // Schedule a retry after 2 seconds
+      reconnectTimeoutRef.current = setTimeout(() => {
+        initSocket()
+      }, 2000)
     }
-  }, [toast])
+  }, [setIsConnected])
 
   useEffect(() => {
     initSocket()
 
     return () => {
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+      }
       if (socketRef.current) {
         socketRef.current.disconnect()
         socketRef.current = null
