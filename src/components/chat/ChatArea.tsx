@@ -6,12 +6,26 @@ import { Hash, Plus, Smile, Send } from 'lucide-react'
 import { useSocket } from '@/hooks/useSocket'
 import { toast } from '@/components/ui/use-toast'
 
+const ALLOWED_FILE_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'application/pdf',
+  'text/plain',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+]
+
+const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
+
 interface FileAttachment {
   id: string
-  filename: string
+  name: string
   size: number
   type: string
   url: string
+  createdAt: string
+  messageId: string
 }
 
 interface Message {
@@ -19,7 +33,7 @@ interface Message {
   content: string
   createdAt: string
   channelId: string
-  attachment?: FileAttachment
+  files: FileAttachment[]
   user: {
     id: string
     name: string | null
@@ -60,19 +74,41 @@ export default function ChatArea({ channelId }: ChatAreaProps) {
     setIsDragging(false)
   }
 
+  const validateFile = (file: File): boolean => {
+    if (!ALLOWED_FILE_TYPES.includes(file.type)) {
+      toast({
+        title: 'Invalid file type',
+        description: 'Please upload one of the following: Images (JPEG, PNG, GIF), PDF, Text, or Word documents.',
+        variant: 'destructive',
+      })
+      return false
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+      toast({
+        title: 'File too large',
+        description: 'Maximum file size is 5MB.',
+        variant: 'destructive',
+      })
+      return false
+    }
+
+    return true
+  }
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(false)
     
     const file = e.dataTransfer.files[0]
-    if (file) {
+    if (file && validateFile(file)) {
       setSelectedFile(file)
     }
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) {
+    if (file && validateFile(file)) {
       setSelectedFile(file)
     }
     setIsFilePickerOpen(false)
@@ -300,31 +336,67 @@ export default function ChatArea({ channelId }: ChatAreaProps) {
                     </span>
                   </div>
                   <p className="text-gray-300">{message.content}</p>
-                  {message.attachment && (
-                    <div className="mt-2">
-                      {message.attachment.type.startsWith('image/') ? (
-                        <img
-                          src={message.attachment.url}
-                          alt={message.attachment.filename}
-                          className="mt-2 max-h-96 rounded-lg object-contain"
-                        />
+                  {message.files?.map((file) => (
+                    <div key={file.id} className="mt-2">
+                      {file.type.startsWith('image/') ? (
+                        // Image files
+                        <div className="mt-2 max-w-2xl">
+                          <img
+                            src={file.url}
+                            alt={file.name}
+                            className="rounded-lg object-contain"
+                            style={{ maxHeight: '384px' }}
+                          />
+                          <div className="mt-1 text-xs text-gray-400">
+                            {file.name} ({(file.size / 1024).toFixed(1)} KB)
+                          </div>
+                        </div>
+                      ) : file.type === 'text/plain' ? (
+                        // Text files
+                        <div className="mt-2 max-w-2xl">
+                          <a
+                            href={file.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="group block rounded-lg border border-gray-700 bg-gray-800 p-4 hover:border-gray-600"
+                          >
+                            <div className="flex items-center gap-2">
+                              <svg className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                              </svg>
+                              <span className="text-sm text-gray-300 group-hover:text-white">
+                                {file.name}
+                              </span>
+                              <span className="ml-auto text-xs text-gray-500">
+                                {(file.size / 1024).toFixed(1)} KB
+                              </span>
+                            </div>
+                          </a>
+                        </div>
                       ) : (
-                        <a
-                          href={message.attachment.url}
-                          download={message.attachment.filename}
-                          className="mt-2 flex items-center gap-2 rounded-md bg-gray-700 p-2 text-sm text-gray-300 hover:bg-gray-600"
-                        >
-                          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                          </svg>
-                          <span>{message.attachment.filename}</span>
-                          <span className="text-gray-400">
-                            ({Math.round(message.attachment.size / 1024)}KB)
-                          </span>
-                        </a>
+                        // Other files
+                        <div className="mt-2 max-w-2xl">
+                          <a
+                            href={file.url}
+                            download={file.name}
+                            className="group block rounded-lg border border-gray-700 bg-gray-800 p-4 hover:border-gray-600"
+                          >
+                            <div className="flex items-center gap-2">
+                              <svg className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                              </svg>
+                              <span className="text-sm text-gray-300 group-hover:text-white">
+                                {file.name}
+                              </span>
+                              <span className="ml-auto text-xs text-gray-500">
+                                {(file.size / 1024).toFixed(1)} KB
+                              </span>
+                            </div>
+                          </a>
+                        </div>
                       )}
                     </div>
-                  )}
+                  ))}
                 </div>
               </div>
             ))}
@@ -377,6 +449,7 @@ export default function ChatArea({ channelId }: ChatAreaProps) {
               type="file"
               onChange={handleFileSelect}
               className="hidden"
+              accept={ALLOWED_FILE_TYPES.join(',')}
             />
             <button
               type="submit"
