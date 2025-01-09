@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react'
 import { Hash, Plus, Smile, Send } from 'lucide-react'
 import { useSocket } from '@/hooks/useSocket'
 import { toast } from '@/components/ui/use-toast'
+import { EmojiPicker } from './EmojiPicker'
 
 const ALLOWED_FILE_TYPES = [
   'image/jpeg',
@@ -121,6 +122,22 @@ export default function ChatArea({ channelId }: ChatAreaProps) {
     }
   }
 
+  const handleEmojiSelect = (emoji: any) => {
+    const input = document.querySelector('input[type="text"]') as HTMLInputElement
+    if (!input) return
+
+    const start = input.selectionStart || 0
+    const end = input.selectionEnd || 0
+    const updatedMessage = newMessage.slice(0, start) + emoji.native + newMessage.slice(end)
+    setNewMessage(updatedMessage)
+
+    // Set cursor position after emoji
+    setTimeout(() => {
+      input.setSelectionRange(start + emoji.native.length, start + emoji.native.length)
+      input.focus()
+    }, 0)
+  }
+
   useEffect(() => {
     async function fetchChannel() {
       try {
@@ -155,10 +172,6 @@ export default function ChatArea({ channelId }: ChatAreaProps) {
     // Debug socket connection
     console.log('Socket connected:', isConnected)
     console.log('Current channel:', channelId)
-
-    // Join the channel room
-    socket.emit('join-channel', channelId)
-    console.log('Joining channel:', channelId)
 
     // Listen for new messages
     const handleNewMessage = (message: Message) => {
@@ -198,6 +211,14 @@ export default function ChatArea({ channelId }: ChatAreaProps) {
       )
     }
 
+    // Join channel when socket connects
+    const joinChannel = () => {
+      console.log('Joining channel:', channelId)
+      socket.emit('join-channel', channelId)
+    }
+
+    if (socket.connected) joinChannel()
+    socket.on('connect', joinChannel)
     socket.on('new-message', handleNewMessage)
     socket.on('profile-update', handleProfileUpdate)
 
@@ -205,6 +226,7 @@ export default function ChatArea({ channelId }: ChatAreaProps) {
     return () => {
       console.log('Leaving channel:', channelId)
       socket.emit('leave-channel', channelId)
+      socket.off('connect', joinChannel)
       socket.off('new-message', handleNewMessage)
       socket.off('profile-update', handleProfileUpdate)
     }
@@ -249,16 +271,15 @@ export default function ChatArea({ channelId }: ChatAreaProps) {
       // Debug socket state
       console.log('Socket connected before emit:', isConnected)
       
-      if (!socket) {
-        console.error('Socket not connected, cannot send message')
-        return
+      // Emit the message through socket
+      if (socket && isConnected) {
+        console.log('Emitting message:', message)
+        socket.emit('send-message', message)
+      } else {
+        console.warn('Socket not connected, message will not be real-time')
       }
 
-      // Emit message through socket
-      console.log('Emitting message:', message)
-      socket.emit('send-message', message)
-
-      // Add message to local state immediately for better UX
+      // Update local state
       setMessages(prev => [...prev, message])
       scrollToBottom()
     } catch (error) {
@@ -444,6 +465,7 @@ export default function ChatArea({ channelId }: ChatAreaProps) {
               placeholder={`Message #${channel?.name}`}
               className="flex-1 bg-transparent px-2 py-2 text-white placeholder-gray-400 focus:outline-none"
             />
+            <EmojiPicker onEmojiSelect={handleEmojiSelect} />
             <input
               ref={fileInputRef}
               type="file"

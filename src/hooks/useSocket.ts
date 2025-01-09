@@ -8,7 +8,7 @@ export function useSocket() {
   const socketRef = useRef<Socket | null>(null)
   const [isConnected, setIsConnected] = useState(false)
   const { toast } = useToast()
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout>()
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined)
 
   const initSocket = useCallback(async () => {
     try {
@@ -102,7 +102,7 @@ export function useSocket() {
         initSocket()
       }, 2000)
     }
-  }, [setIsConnected])
+  }, [setIsConnected, toast])
 
   useEffect(() => {
     initSocket()

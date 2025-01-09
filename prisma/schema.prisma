@@ -13,16 +13,17 @@ model Account {
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String?
-  access_token      String?
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String?
+  id_token          String? @db.Text
   session_state     String?
   user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
+  @@index([userId])
 }
 
 model Session {
@@ -31,6 +32,8 @@ model Session {
   userId       String
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model User {
@@ -41,38 +44,56 @@ model User {
   emailVerified DateTime?
   image         String?
   isOnline      Boolean    @default(false)
+  lastSeen      DateTime   @default(now())
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
   accounts      Account[]
   channels      Channel[]  @relation("CreatedChannels")
   messages      Message[]
   reactions     Reaction[]
   sessions      Session[]
+  conversations ConversationParticipant[]
+  directMessages DirectMessage[]
+
+  @@index([email])
+  @@index([isOnline])
 }
 
 model Channel {
   id          String    @id @default(cuid())
   name        String
-  description String?
+  description String?   @db.Text
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   createdById String?
-  createdBy   User?     @relation("CreatedChannels", fields: [createdById], references: [id])
+  isPrivate   Boolean   @default(false)
+  createdBy   User?     @relation("CreatedChannels", fields: [createdById], references: [id], onDelete: SetNull)
   messages    Message[]
+
+  @@index([createdById])
+  @@index([name])
 }
 
 model Message {
   id        String    @id @default(cuid())
-  content   String
+  content   String    @db.Text
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   userId    String
   channelId String
   replyToId String?
+  isEdited  Boolean   @default(false)
   files     File[]
   channel   Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  replyTo   Message?  @relation("Replies", fields: [replyToId], references: [id])
+  replyTo   Message?  @relation("Replies", fields: [replyToId], references: [id], onDelete: SetNull)
   replies   Message[] @relation("Replies")
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   reactions Reaction[]
+
+  @@index([userId])
+  @@index([channelId])
+  @@index([replyToId])
+  @@index([createdAt])
 }
 
 model Reaction {
@@ -85,15 +106,66 @@ model Reaction {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, messageId, emoji])
+  @@index([messageId])
+  @@index([userId])
 }
 
 model File {
-  id        String    @id @default(cuid())
-  name      String
-  url       String
-  size      Int
-  type      String
-  createdAt DateTime  @default(now())
-  message   Message   @relation(fields: [messageId], references: [id])
-  messageId String
+  id             String         @id @default(cuid())
+  name           String
+  url            String
+  size           Int
+  type           String
+  createdAt      DateTime       @default(now())
+  message        Message?       @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId      String?
+  directMessage  DirectMessage? @relation(fields: [directMessageId], references: [id], onDelete: Cascade)
+  directMessageId String?
+
+  @@index([messageId])
+  @@index([directMessageId])
+}
+
+model Conversation {
+  id            String    @id @default(cuid())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  isGroup       Boolean   @default(false)
+  name          String?
+  participants  ConversationParticipant[]
+  messages      DirectMessage[]
+
+  @@index([createdAt])
+}
+
+model ConversationParticipant {
+  id             String       @id @default(cuid())
+  userId         String
+  conversationId String
+  lastRead       DateTime?
+  joinedAt       DateTime     @default(now())
+  isAdmin        Boolean      @default(false)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, conversationId])
+  @@index([userId])
+  @@index([conversationId])
+}
+
+model DirectMessage {
+  id             String       @id @default(cuid())
+  content        String       @db.Text
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  conversationId String
+  userId         String
+  isEdited       Boolean      @default(false)
+  files          File[]
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([userId])
+  @@index([createdAt])
 }

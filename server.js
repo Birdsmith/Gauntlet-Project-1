@@ -102,7 +102,18 @@ app.prepare().then(() => {
         
         socket.join(room)
         console.log(`User ${socket.data.userId} joined channel ${channelId}`)
-        console.log('Socket rooms after join:', Array.from(socket.rooms))
+      })
+
+      // Handle joining conversations (direct messages)
+      socket.on('join-conversation', (conversationId) => {
+        const room = `conversation:${conversationId}`
+        // Leave all other conversation rooms first
+        Array.from(socket.rooms)
+          .filter(r => r !== socket.id && r.startsWith('conversation:'))
+          .forEach(r => socket.leave(r))
+        
+        socket.join(room)
+        console.log(`User ${socket.data.userId} joined conversation ${conversationId}`)
       })
 
       // Handle leaving channels
@@ -110,6 +121,13 @@ app.prepare().then(() => {
         const room = `channel:${channelId}`
         socket.leave(room)
         console.log(`User ${socket.data.userId} left channel ${channelId}`)
+      })
+
+      // Handle leaving conversations
+      socket.on('leave-conversation', (conversationId) => {
+        const room = `conversation:${conversationId}`
+        socket.leave(room)
+        console.log(`User ${socket.data.userId} left conversation ${conversationId}`)
       })
 
       // Handle new messages
@@ -127,6 +145,21 @@ app.prepare().then(() => {
         }
       })
 
+      // Handle new direct messages
+      socket.on('direct-message', async (message) => {
+        const room = `conversation:${message.conversationId}`
+        console.log(`Broadcasting direct message to ${room}`, message)
+        
+        try {
+          // Broadcast to all clients in the conversation
+          io.to(room).emit('direct-message', message)
+          console.log('Direct message broadcasted successfully to room:', room)
+        } catch (error) {
+          console.error('Error broadcasting direct message:', error)
+          socket.emit('message-error', { error: 'Failed to broadcast direct message' })
+        }
+      })
+
       // Handle channel creation
       socket.on('channel-created', (channel) => {
         console.log(`Channel ${channel.id} was created, broadcasting to all users`)
@@ -136,8 +169,16 @@ app.prepare().then(() => {
       // Handle channel deletion
       socket.on('channel-deleted', (channelId) => {
         console.log(`Channel ${channelId} was deleted, broadcasting to all users`)
-        // Broadcast to all clients including the sender for consistency
         io.emit('channel-deleted', channelId)
+      })
+
+      // Handle new conversation
+      socket.on('conversation-created', (conversation) => {
+        console.log(`Conversation ${conversation.id} was created, notifying participants`)
+        // Notify both participants
+        const room1 = `user:${conversation.user1Id}`
+        const room2 = `user:${conversation.user2Id}`
+        io.to(room1).to(room2).emit('conversation-created', conversation)
       })
 
       // Handle disconnect

@@ -1,72 +1,126 @@
 'use client'
 
-import { useSession, signOut } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Button } from '@/components/ui/button'
+import { signOut } from 'next-auth/react'
 import { LogOut } from 'lucide-react'
-import ChatArea from '@/components/chat/ChatArea'
 import ChannelList from '@/components/chat/ChannelList'
+import { DirectMessagesList } from '@/components/chat/DirectMessagesList'
+import ChatArea from '@/components/chat/ChatArea'
+import DirectMessageChat from '@/components/chat/DirectMessageChat'
 import UserList from '@/components/chat/UserList'
+import { useSession } from 'next-auth/react'
 
 export default function Home() {
-  const { data: session, status } = useSession()
   const router = useRouter()
-  const [selectedChannel, setSelectedChannel] = useState<string | null>(null)
+  const { data: session } = useSession()
+  const searchParams = useSearchParams()
+  const channelId = searchParams.get('channel')
+  const conversationId = searchParams.get('conversation')
+  const [showUserList, setShowUserList] = useState(true)
+  const [currentConversation, setCurrentConversation] = useState<{
+    id: string
+    otherUser: {
+      id: string
+      name: string | null
+      image: string | null
+      isOnline: boolean
+    }
+  } | null>(null)
 
   useEffect(() => {
-    if (status === 'unauthenticated') {
-      router.push('/auth/signin')
+    async function fetchConversation() {
+      if (!conversationId || !session?.user?.id) return
+
+      try {
+        const response = await fetch(`/api/conversations/${conversationId}`)
+        if (!response.ok) throw new Error('Failed to fetch conversation')
+        const data = await response.json()
+        
+        const otherUser = data.participants.find((p: any) => p.id !== session.user.id)
+        if (otherUser) {
+          setCurrentConversation({
+            id: data.id,
+            otherUser: {
+              id: otherUser.id,
+              name: otherUser.name,
+              image: otherUser.image,
+              isOnline: otherUser.isOnline,
+            },
+          })
+        }
+      } catch (error) {
+        console.error('Failed to fetch conversation:', error)
+      }
     }
-  }, [status, router])
 
-  const handleLogout = async () => {
-    await signOut({ redirect: false })
-    router.push('/auth/signin')
-  }
-
-  if (status === 'loading') {
-    return (
-      <div className="flex h-screen items-center justify-center bg-gray-900">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
-      </div>
-    )
-  }
+    fetchConversation()
+  }, [conversationId, session?.user?.id])
 
   return (
-    <div className="flex h-screen bg-gray-900">
-      {/* Left sidebar */}
-      <div className="flex w-60 flex-col bg-gray-800">
-        <div className="flex h-12 items-center justify-between border-b border-gray-700 px-4">
-          <h1 className="text-lg font-bold text-white">Chat Genius</h1>
-          <button
-            onClick={handleLogout}
-            className="rounded p-1 text-gray-400 hover:bg-gray-700 hover:text-white"
-            aria-label="Logout"
+    <main className="flex h-screen bg-gray-900">
+      {/* Left Sidebar */}
+      <div className="flex w-56 flex-col border-r border-gray-700 bg-gray-900">
+        {/* Header with branding */}
+        <div className="flex h-12 items-center justify-between px-4 border-b border-gray-700 bg-gray-800">
+          <h1 className="text-xl font-bold text-white">ChatGenius</h1>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => signOut()}
+            className="text-gray-400 hover:text-white"
+            title="Logout"
           >
             <LogOut className="h-5 w-5" />
-          </button>
+          </Button>
         </div>
-        <ChannelList 
-          selectedChannel={selectedChannel} 
-          onSelectChannel={setSelectedChannel} 
-        />
+        
+        <ScrollArea className="flex-1">
+          <div className="p-4">
+            <ChannelList
+              selectedChannel={channelId}
+              onSelectChannel={(id) => {
+                const params = new URLSearchParams(searchParams)
+                params.set('channel', id)
+                params.delete('conversation')
+                router.push(`/?${params.toString()}`)
+              }}
+            />
+            <div className="my-2 border-t border-gray-700" />
+            <DirectMessagesList />
+          </div>
+        </ScrollArea>
       </div>
 
-      {/* Main chat area */}
-      <div className="flex flex-1 flex-col">
-        {selectedChannel ? (
-          <ChatArea channelId={selectedChannel} />
+      {/* Chat Area */}
+      <div className="flex flex-1 flex-col bg-gray-800">
+        {conversationId && currentConversation ? (
+          <DirectMessageChat
+            conversationId={conversationId}
+            otherUser={currentConversation.otherUser}
+          />
+        ) : channelId ? (
+          <ChatArea channelId={channelId} />
         ) : (
-          <div className="flex flex-1 items-center justify-center text-gray-400">
-            Select a channel to start chatting
+          <div className="flex flex-1 items-center justify-center">
+            <p className="text-gray-400">Select a channel or conversation to start chatting</p>
           </div>
         )}
       </div>
 
-      {/* Right sidebar - Online users */}
-      <div className="w-60 bg-gray-800 p-4">
-        <UserList />
+      {/* Right Sidebar - User List */}
+      <div className="w-56 border-l border-gray-700 bg-gray-900">
+        <div className="flex h-12 items-center px-4 border-b border-gray-700 bg-gray-800">
+          <h2 className="text-lg font-semibold text-white">Online Users</h2>
+        </div>
+        <ScrollArea className="h-[calc(100vh-4rem)]">
+          <div className="p-4">
+            <UserList />
+          </div>
+        </ScrollArea>
       </div>
-    </div>
+    </main>
   )
 }
