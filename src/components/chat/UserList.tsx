@@ -74,12 +74,12 @@ export default function UserList() {
     }
 
     // Listen for user events
-    socket.on('userStatus', handleUserStatus)
+    socket.on('user-status', handleUserStatus)
     socket.on('profile-update', handleProfileUpdate)
     socket.on('new-user', handleNewUser)
 
     return () => {
-      socket.off('userStatus', handleUserStatus)
+      socket.off('user-status', handleUserStatus)
       socket.off('profile-update', handleProfileUpdate)
       socket.off('new-user', handleNewUser)
     }

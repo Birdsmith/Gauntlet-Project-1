@@ -8,7 +8,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
-import { ChevronDown, Plus } from "lucide-react"
+import { ChevronDown, Plus, Search } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 interface User {
   id: string
@@ -129,34 +130,69 @@ export function DirectMessagesList() {
                 <Plus className="h-4 w-4" />
               </button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="w-full max-w-md rounded-lg bg-gray-800 p-6">
               <DialogHeader>
-                <DialogTitle>New Conversation</DialogTitle>
+                <DialogTitle className="text-xl font-bold text-white">Find a User</DialogTitle>
               </DialogHeader>
-              <div className="space-y-4 mt-4">
-                <Input
-                  placeholder="Search users..."
-                  value={searchQuery}
-                  onChange={handleSearch}
-                />
-                <ScrollArea className="h-[300px]">
-                  {searchResults.map((user) => (
-                    <Button
-                      key={user.id}
-                      variant="ghost"
-                      className="w-full justify-start"
-                      onClick={() => startConversation(user.id)}
-                    >
-                      {user.image && (
-                        <img
-                          src={user.image}
-                          alt={user.name || "User"}
-                          className="w-6 h-6 rounded-full mr-2"
-                        />
-                      )}
-                      <span>{user.name}</span>
-                    </Button>
-                  ))}
+              <div className="mt-4 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300">
+                    SEARCH USERS
+                  </label>
+                  <div className="relative mt-1">
+                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                    <Input
+                      placeholder="Search by username..."
+                      value={searchQuery}
+                      onChange={handleSearch}
+                      className="w-full rounded-md bg-gray-700 pl-9 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+                <ScrollArea className="mt-4 max-h-[300px]">
+                  {searchResults.length === 0 ? (
+                    <p className="py-8 text-center text-sm text-gray-400">
+                      {searchQuery ? "No users found" : "Type to search users"}
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {searchResults.map((user) => (
+                        <button
+                          key={user.id}
+                          onClick={() => startConversation(user.id)}
+                          className="flex w-full items-center space-x-3 rounded-lg p-3 text-left hover:bg-gray-700 focus:outline-none"
+                        >
+                          <div className="relative h-10 w-10">
+                            {user.image ? (
+                              <img
+                                src={user.image}
+                                alt={user.name || "User"}
+                                className="h-full w-full rounded-full object-cover"
+                              />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center rounded-full bg-gray-700 text-sm font-medium text-gray-300">
+                                {user.name?.[0] || "?"}
+                              </div>
+                            )}
+                            <span
+                              className={cn(
+                                "absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-gray-900",
+                                user.isOnline ? "bg-green-500" : "bg-gray-500"
+                              )}
+                            />
+                          </div>
+                          <div>
+                            <p className="font-medium text-white">
+                              {user.name || "Unknown User"}
+                            </p>
+                            <p className="text-sm text-gray-400">
+                              {user.isOnline ? "Online" : "Offline"}
+                            </p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </ScrollArea>
               </div>
             </DialogContent>

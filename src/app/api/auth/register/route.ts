@@ -1,19 +1,7 @@
 import { NextResponse } from 'next/server'
 import { hash } from 'bcryptjs'
 import prisma from '@/lib/prisma'
-import { Server as SocketServer } from 'socket.io'
-import { Server as HTTPServer } from 'http'
-
-// Get the Socket.IO server instance
-let io: SocketServer | null = null
-
-// This function will be called once to initialize the Socket.IO instance
-export function initSocketIO(httpServer: HTTPServer) {
-  if (!io) {
-    io = new SocketServer(httpServer)
-  }
-  return io
-}
+import { getIO } from '@/lib/socket'
 
 export async function POST(req: Request) {
   try {
@@ -111,10 +99,12 @@ export async function POST(req: Request) {
       },
     })
 
-    // Emit new user event through Socket.IO
-    const globalSocket = (global as any).socketIo
-    if (globalSocket) {
-      globalSocket.emit('new-user', user)
+    try {
+      // Emit new user event through Socket.IO
+      const io = getIO()
+      io.emit('new-user', user)
+    } catch (socketError) {
+      console.warn('Socket.IO not initialized:', socketError)
     }
 
     return NextResponse.json(

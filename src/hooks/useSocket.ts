@@ -1,122 +1,160 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { io, type Socket } from 'socket.io-client'
-import { useToast } from '@/components/ui/use-toast'
+import { useEffect, useRef, useState, useCallback } from 'react'
+import { useSession } from 'next-auth/react'
+import { Socket, io as socketIO } from 'socket.io-client'
 
-export function useSocket() {
-  const socketRef = useRef<Socket | null>(null)
-  const [isConnected, setIsConnected] = useState(false)
-  const { toast } = useToast()
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined)
+interface UseSocketReturn {
+  socket: Socket | null
+  isConnected: boolean
+  sendMessage: (event: string, data: any) => Promise<void>
+}
 
-  const initSocket = useCallback(async () => {
-    try {
-      // Clear any existing reconnection timeout
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current)
+// Create a singleton socket instance that persists across component remounts
+let globalSocket: Socket | null = null
+let globalUserId: string | null = null
+let messageQueue: { event: string; data: any }[] = []
+let isConnecting = false
+
+export const useSocket = (): UseSocketReturn => {
+  const { data: session } = useSession()
+  const [isConnected, setIsConnected] = useState<boolean>(false)
+  const reconnectAttempts = useRef(0)
+  const maxReconnectAttempts = 3
+
+  const processMessageQueue = useCallback(() => {
+    if (!globalSocket?.connected) return
+
+    while (messageQueue.length > 0) {
+      const message = messageQueue.shift()
+      if (message) {
+        console.log('Processing queued message:', message.event)
+        globalSocket.emit(message.event, message.data)
       }
-
-      if (!socketRef.current) {
-        const socketUrl = 'http://localhost:3001'
-        console.log('Initializing socket connection to:', socketUrl)
-
-        socketRef.current = io(socketUrl, {
-          transports: ['websocket', 'polling'],
-          withCredentials: true,
-          reconnectionAttempts: 5,
-          reconnectionDelay: 1000,
-          reconnectionDelayMax: 5000,
-          timeout: 10000,
-          autoConnect: true,
-        })
-
-        socketRef.current.on('connect', () => {
-          console.log('Socket connected successfully:', socketRef.current?.id)
-          setIsConnected(true)
-        })
-
-        socketRef.current.on('disconnect', (reason) => {
-          console.log('Socket disconnected:', reason)
-          setIsConnected(false)
-          
-          // Only show toast for unexpected disconnections
-          if (reason !== 'io client disconnect') {
-            toast({
-              title: 'Connection lost',
-              description: 'Attempting to reconnect...',
-              variant: 'destructive',
-            })
-          }
-        })
-
-        socketRef.current.on('connect_error', (error: Error) => {
-          console.error('Socket connection error:', error.message)
-          setIsConnected(false)
-          
-          // Schedule a reconnection attempt after 2 seconds
-          reconnectTimeoutRef.current = setTimeout(() => {
-            console.log('Attempting to reconnect socket...')
-            // Clean up the old socket
-            if (socketRef.current) {
-              socketRef.current.disconnect()
-              socketRef.current = null
-            }
-            // Try to initialize again
-            initSocket()
-          }, 2000)
-        })
-
-        socketRef.current.on('reconnect', (attemptNumber: number) => {
-          console.log('Socket reconnected after', attemptNumber, 'attempts')
-          setIsConnected(true)
-          toast({
-            title: 'Reconnected',
-            description: 'Chat connection restored',
-          })
-        })
-
-        socketRef.current.on('reconnect_attempt', (attemptNumber: number) => {
-          console.log('Reconnection attempt:', attemptNumber)
-        })
-
-        socketRef.current.on('reconnect_error', (error: Error) => {
-          console.error('Socket reconnection error:', error.message)
-        })
-
-        socketRef.current.on('reconnect_failed', () => {
-          console.error('Socket reconnection failed')
-          toast({
-            title: 'Connection failed',
-            description: 'Unable to restore chat connection. Please refresh the page.',
-            variant: 'destructive',
-          })
-        })
-      }
-    } catch (error) {
-      console.error('Socket initialization error:', error)
-      setIsConnected(false)
-      
-      // Schedule a retry after 2 seconds
-      reconnectTimeoutRef.current = setTimeout(() => {
-        initSocket()
-      }, 2000)
     }
-  }, [setIsConnected, toast])
+  }, [])
+
+  const sendMessage = useCallback(async (event: string, data: any) => {
+    return new Promise<void>((resolve, reject) => {
+      if (!globalSocket) {
+        console.error('No socket instance available')
+        reject(new Error('No socket instance available'))
+        return
+      }
+
+      if (!globalSocket.connected) {
+        console.log('Socket not connected, queueing message:', event)
+        messageQueue.push({ event, data })
+        resolve()
+        return
+      }
+
+      try {
+        globalSocket.emit(event, data)
+        resolve()
+      } catch (error) {
+        console.error('Error sending message:', error)
+        reject(error)
+      }
+    })
+  }, [])
 
   useEffect(() => {
-    initSocket()
+    if (!session?.user || typeof window === 'undefined' || isConnecting) {
+      return
+    }
+
+    if (globalSocket?.connected && globalUserId === session.user.id) {
+      setIsConnected(true)
+      processMessageQueue()
+      return
+    }
+
+    if (globalSocket && globalUserId !== session.user.id) {
+      console.log('User changed, cleaning up existing socket')
+      globalSocket.disconnect()
+      globalSocket = null
+      globalUserId = null
+      messageQueue = []
+    }
+
+    if (!globalSocket) {
+      isConnecting = true
+      console.log('Creating new socket connection for user:', session.user.id)
+      
+      const socket = socketIO('http://localhost:3001', {
+        autoConnect: false,
+        reconnection: true,
+        reconnectionAttempts: maxReconnectAttempts,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        timeout: 20000,
+        transports: ['websocket'],
+        forceNew: false,
+        auth: {
+          userId: session.user.id
+        }
+      })
+
+      socket.on('connect', () => {
+        console.log('Socket connected:', socket.id)
+        globalUserId = session.user.id
+        setIsConnected(true)
+        reconnectAttempts.current = 0
+        isConnecting = false
+        processMessageQueue()
+      })
+
+      socket.on('disconnect', (reason: string) => {
+        console.log('Socket disconnected:', reason)
+        setIsConnected(false)
+        isConnecting = false
+
+        if (reconnectAttempts.current >= maxReconnectAttempts) {
+          console.log('Max reconnection attempts reached')
+          return
+        }
+
+        if (reason === 'io server disconnect' || reason === 'transport close') {
+          reconnectAttempts.current++
+          console.log(`Reconnection attempt ${reconnectAttempts.current}/${maxReconnectAttempts}`)
+          socket.connect()
+        }
+      })
+
+      socket.on('connect_error', (error: Error) => {
+        console.error('Socket connection error:', error)
+        setIsConnected(false)
+        isConnecting = false
+      })
+
+      socket.on('error', (error: Error) => {
+        console.error('Socket error:', error)
+        setIsConnected(false)
+        isConnecting = false
+      })
+
+      globalSocket = socket
+      socket.connect()
+    }
 
     return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current)
-      }
-      if (socketRef.current) {
-        socketRef.current.disconnect()
-        socketRef.current = null
+      if (globalSocket && session.user.id !== globalUserId) {
+        console.log('Cleaning up socket connection due to user change')
+        globalSocket.disconnect()
+        globalSocket = null
+        globalUserId = null
+        messageQueue = []
+        setIsConnected(false)
+        reconnectAttempts.current = 0
+        isConnecting = false
       }
     }
-  }, [initSocket])
+  }, [session, processMessageQueue])
 
-  return { socket: socketRef.current, isConnected }
+  return {
+    socket: globalSocket,
+    isConnected,
+    sendMessage
+  }
 } 

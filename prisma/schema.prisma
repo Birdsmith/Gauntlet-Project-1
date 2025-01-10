@@ -75,25 +75,25 @@ model Channel {
 }
 
 model Message {
-  id        String    @id @default(cuid())
-  content   String    @db.Text
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  userId    String
-  channelId String
-  replyToId String?
-  isEdited  Boolean   @default(false)
-  files     File[]
-  channel   Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  replyTo   Message?  @relation("Replies", fields: [replyToId], references: [id], onDelete: SetNull)
-  replies   Message[] @relation("Replies")
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  reactions Reaction[]
+  id          String    @id @default(cuid())
+  content     String    @db.Text
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  channelId   String
+  userId      String
+  isEdited    Boolean   @default(false)
+  files       File[]
+  replyToId   String?
+  replyTo     Message?  @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies     Message[] @relation("MessageReplies")
+  channel     Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reactions   Reaction[] @relation("MessageReactions")
 
-  @@index([userId])
   @@index([channelId])
-  @@index([replyToId])
+  @@index([userId])
   @@index([createdAt])
+  @@index([replyToId])
 }
 
 model Reaction {
@@ -101,12 +101,17 @@ model Reaction {
   emoji     String
   createdAt DateTime @default(now())
   userId    String
-  messageId String
-  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId String?
+  directMessageId String?
+  
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message   Message?  @relation("MessageReactions", fields: [messageId], references: [id], onDelete: Cascade)
+  directMessage  DirectMessage? @relation("DirectMessageReactions", fields: [directMessageId], references: [id], onDelete: Cascade)
 
   @@unique([userId, messageId, emoji])
+  @@unique([userId, directMessageId, emoji])
   @@index([messageId])
+  @@index([directMessageId])
   @@index([userId])
 }
 
@@ -119,7 +124,7 @@ model File {
   createdAt      DateTime       @default(now())
   message        Message?       @relation(fields: [messageId], references: [id], onDelete: Cascade)
   messageId      String?
-  directMessage  DirectMessage? @relation(fields: [directMessageId], references: [id], onDelete: Cascade)
+  directMessage  DirectMessage? @relation("DirectMessageFiles", fields: [directMessageId], references: [id], onDelete: Cascade)
   directMessageId String?
 
   @@index([messageId])
@@ -154,18 +159,22 @@ model ConversationParticipant {
 }
 
 model DirectMessage {
-  id             String       @id @default(cuid())
-  content        String       @db.Text
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id             String    @id @default(uuid())
+  content        String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
   conversationId String
   userId         String
-  isEdited       Boolean      @default(false)
-  files          File[]
+  isEdited      Boolean   @default(false)
+  replyToId     String?
+  
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replyTo       DirectMessage?  @relation("DirectMessageReplies", fields: [replyToId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  replies       DirectMessage[] @relation("DirectMessageReplies")
+  files         File[]        @relation("DirectMessageFiles")
+  reactions     Reaction[]    @relation("DirectMessageReactions")
 
   @@index([conversationId])
   @@index([userId])
-  @@index([createdAt])
 }

@@ -33,6 +33,10 @@ export async function GET(
     const messages = await prisma.directMessage.findMany({
       where: {
         conversationId: params.conversationId,
+        replyToId: null
+      },
+      orderBy: {
+        createdAt: 'asc',
       },
       include: {
         user: {
@@ -43,13 +47,33 @@ export async function GET(
           },
         },
         files: true,
-      },
-      orderBy: {
-        createdAt: 'asc',
+        replies: {
+          select: {
+            id: true,
+          },
+        },
+        reactions: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                image: true,
+              },
+            },
+          },
+        },
       },
     })
 
-    return NextResponse.json(messages)
+    // Transform messages to include reply count
+    const transformedMessages = messages.map(message => ({
+      ...message,
+      replyCount: message.replies.length,
+      replies: undefined, // Remove the replies array from the response
+    }))
+
+    return NextResponse.json(transformedMessages)
   } catch (error) {
     console.error('Error fetching messages:', error)
     return NextResponse.json(
@@ -91,45 +115,15 @@ export async function POST(
     }
 
     let content = ''
-    let file = null
+    let fileData = null
 
     // Handle both FormData and JSON requests
     const contentType = req.headers.get('content-type') || ''
     if (contentType.includes('multipart/form-data')) {
       const formData = await req.formData()
       content = formData.get('content') as string || ''
-      file = formData.get('file') as File
-    } else {
-      const json = await req.json()
-      content = json.content
-    }
-
-    if (!content && !file) {
-      return NextResponse.json({ error: 'Message content is required' }, { status: 400 })
-    }
-
-    // Create the message first
-    const message = await prisma.directMessage.create({
-      data: {
-        content,
-        conversationId: params.conversationId,
-        userId: session.user.id,
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            image: true,
-          },
-        },
-        files: true,
-      },
-    })
-
-    // Handle file upload if present
-    if (file) {
-      try {
+      const file = formData.get('file') as File
+      if (file) {
         const bytes = await file.arrayBuffer()
         const buffer = Buffer.from(bytes)
 
@@ -146,39 +140,51 @@ export async function POST(
         // Save file
         await writeFile(filePath, buffer)
         
-        // Create file record in database
-        await prisma.file.create({
-          data: {
-            name: file.name,
-            url: `/uploads/${uniqueFilename}`,
-            size: buffer.length,
-            type: file.type,
-            directMessageId: message.id,
-          },
-        })
-
-        // Fetch updated message with file
-        const updatedMessage = await prisma.directMessage.findUnique({
-          where: { id: message.id },
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                image: true,
-              },
-            },
-            files: true,
-          },
-        })
-
-        return NextResponse.json(updatedMessage)
-      } catch (error) {
-        console.error('File upload error:', error)
-        // Still return the message even if file upload fails
-        return NextResponse.json(message)
+        fileData = {
+          name: file.name,
+          url: `/uploads/${uniqueFilename}`,
+          size: buffer.length,
+          type: file.type,
+        }
       }
+    } else {
+      const json = await req.json()
+      content = json.content || ''
+      fileData = json.file
     }
+
+    if (!content && !fileData) {
+      return NextResponse.json({ error: 'Message content or file is required' }, { status: 400 })
+    }
+
+    // Create the message with optional file
+    const message = await prisma.directMessage.create({
+      data: {
+        content,
+        conversationId: params.conversationId,
+        userId: session.user.id,
+        ...(fileData && {
+          files: {
+            create: {
+              name: fileData.name,
+              url: fileData.url,
+              size: fileData.size,
+              type: fileData.type,
+            },
+          },
+        }),
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            image: true,
+          },
+        },
+        files: true,
+      },
+    })
 
     return NextResponse.json(message)
   } catch (error) {

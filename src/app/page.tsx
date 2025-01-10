@@ -82,7 +82,8 @@ export default function Home() {
             <ChannelList
               selectedChannel={channelId}
               onSelectChannel={(id) => {
-                const params = new URLSearchParams(searchParams)
+                const queryParams = Object.fromEntries(searchParams.entries())
+                const params = new URLSearchParams(queryParams)
                 params.set('channel', id)
                 params.delete('conversation')
                 router.push(`/?${params.toString()}`)

@@ -9,36 +9,10 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useToast } from '@/components/ui/use-toast'
 import { EmojiPicker } from './EmojiPicker'
-
-// Types
-interface FileAttachment {
-  id: string
-  name: string
-  size: number
-  type: string
-  url: string
-}
-
-interface User {
-  id: string
-  name: string | null
-  image: string | null
-  isOnline?: boolean
-}
-
-interface DirectMessage {
-  id: string
-  content: string
-  createdAt: string
-  conversationId: string
-  files: FileAttachment[]
-  user: User
-}
-
-interface DirectMessageChatProps {
-  conversationId: string
-  otherUser: User & { isOnline: boolean }
-}
+import { ThreadView } from './ThreadView'
+import { MessageReactions } from './MessageReactions'
+import type { DirectMessage, User, FileAttachment, Reaction, ReactionEvent } from '@/types/chat'
+import { SearchBar } from './SearchBar'
 
 // Constants
 const ALLOWED_FILE_TYPES = [
@@ -51,8 +25,12 @@ const ALLOWED_FILE_TYPES = [
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 ]
 
-// Add max file size constant
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
+
+interface DirectMessageChatProps {
+  conversationId: string
+  otherUser: User & { isOnline: boolean }
+}
 
 // Components
 const UserAvatar = ({ user }: { user: User }) => (
@@ -161,28 +139,6 @@ const MessageAttachment = ({ file }: { file: FileAttachment }) => (
   </div>
 )
 
-const Message = ({ message }: { message: DirectMessage }) => (
-  <div className="group relative flex items-start space-x-3 hover:bg-gray-800/50 px-2 py-1 rounded">
-    <UserAvatar user={message.user} />
-    <div className="min-w-0 flex-1">
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-medium text-white">
-          {message.user.name}
-        </span>
-        <span className="text-xs text-gray-400">
-          {new Date(message.createdAt).toLocaleString()}
-        </span>
-      </div>
-      <p className="text-sm text-gray-100 whitespace-pre-wrap break-words">
-        {message.content}
-      </p>
-      {message.files?.map((file) => (
-        <MessageAttachment key={file.id} file={file} />
-      ))}
-    </div>
-  </div>
-)
-
 // Main component
 export default function DirectMessageChat({ conversationId, otherUser }: DirectMessageChatProps) {
   const { data: session } = useSession()
@@ -192,10 +148,84 @@ export default function DirectMessageChat({ conversationId, otherUser }: DirectM
   const [isSending, setIsSending] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [selectedThread, setSelectedThread] = useState<DirectMessage | null>(null)
   const { toast } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const { socket, isConnected } = useSocket()
+  const { socket, isConnected, sendMessage } = useSocket()
+
+  const Message = ({ message }: { message: DirectMessage }) => (
+    <div 
+      id={`message-${message.id}`}
+      className="group relative flex items-start space-x-3 hover:bg-gray-800/50 px-2 py-1 rounded transition-colors duration-200"
+    >
+      <UserAvatar user={message.user} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start gap-2">
+          <span className="font-medium text-white">
+            {message.user.name}
+          </span>
+          <span className="text-xs text-gray-400 mt-1">
+            {new Date(message.createdAt).toLocaleString()}
+          </span>
+        </div>
+        <p className="text-gray-100 whitespace-pre-wrap break-words">
+          {message.content}
+        </p>
+        {message.files?.map((file) => (
+          <MessageAttachment key={file.id} file={file} />
+        ))}
+        {/* Reactions and Reply button */}
+        <div className="mt-1 flex items-center gap-2">
+          <div className={cn(
+            "transition-opacity",
+            message.reactions?.length ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          )}>
+            <MessageReactions
+              messageId={message.id}
+              conversationId={conversationId}
+              reactions={message.reactions}
+              onReactionAdd={(reaction) =>
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === message.id
+                      ? { ...m, reactions: [...(m.reactions || []), reaction] }
+                      : m
+                  )
+                )
+              }
+              onReactionRemove={(reactionId) =>
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === message.id
+                      ? {
+                          ...m,
+                          reactions: m.reactions.filter((r) => r.id !== reactionId),
+                        }
+                      : m
+                  )
+                )
+              }
+            />
+          </div>
+          <button
+            onClick={() => setSelectedThread(message)}
+            className={cn(
+              "flex items-center gap-1 text-xs text-gray-400 hover:text-gray-300 transition-opacity",
+              message.replyCount ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+            )}
+          >
+            <MessageSquare className="h-4 w-4" />
+            {message.replyCount ? (
+              <span className="font-medium">{message.replyCount} {message.replyCount === 1 ? 'reply' : 'replies'}</span>
+            ) : (
+              <span>Reply</span>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -284,110 +314,65 @@ export default function DirectMessageChat({ conversationId, otherUser }: DirectM
   // Message handling
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
-    // Session check
-    if (!session?.user?.id) {
-      toast({
-        title: 'Error',
-        description: 'You must be logged in to send messages',
-        variant: 'destructive',
-      })
-      return
-    }
-
-    // Input validation
-    if (!newMessage.trim() && !selectedFile) {
-      toast({
-        title: 'Error',
-        description: 'Please enter a message or select a file',
-        variant: 'destructive',
-      })
-      return
-    }
-
-    if (newMessage.length > 2000) {
-      toast({
-        title: 'Error',
-        description: 'Message is too long. Maximum length is 2000 characters',
-        variant: 'destructive',
-      })
-      return
-    }
+    if (!newMessage.trim() && !selectedFile) return
 
     try {
       setIsSending(true)
-
-      // Check socket connection if we're going to need it
-      if (!socket || !isConnected) {
-        console.warn('Socket connection not established')
-      }
-
-      const formData = new FormData()
-      if (newMessage.trim()) {
-        formData.append('content', newMessage.trim())
-      }
+      let fileData: { name: string; url: string; size: number; type: string } | null = null
+      
       if (selectedFile) {
+        const formData = new FormData()
         formData.append('file', selectedFile)
+        const response = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        })
+        
+        if (!response.ok) {
+          throw new Error('Failed to upload file')
+        }
+        
+        fileData = await response.json()
       }
 
+      // Send to server via API
       const response = await fetch(`/api/conversations/${conversationId}/messages`, {
         method: 'POST',
-        ...(selectedFile
-          ? { body: formData }
-          : {
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ content: newMessage.trim() }),
-            }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content: newMessage.trim(),
+          file: fileData,
+        }),
       })
 
       if (!response.ok) {
-        let errorMessage = 'Failed to send message'
-        try {
-          const errorData = await response.json()
-          errorMessage = errorData.error || errorMessage
-        } catch (e) {
-          console.error('Failed to parse error response:', e)
-        }
-        throw new Error(errorMessage)
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to send message')
       }
 
-      let message
-      try {
-        message = await response.json()
-      } catch (e) {
-        console.error('Failed to parse message response:', e)
-        throw new Error('Invalid response from server')
+      const sentMessage: DirectMessage = await response.json()
+
+      // Update local state
+      setMessages(prev => [...prev, sentMessage])
+
+      // Emit via socket for real-time
+      if (socket) {
+        await sendMessage('new_direct_message', {
+          ...sentMessage,
+          conversationId,
+        })
       }
 
-      if (!message || !message.id) {
-        throw new Error('Invalid message response from server')
-      }
-
-      // Update local state first
-      setMessages(prev => [...prev, message])
       setNewMessage('')
       setSelectedFile(null)
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
-
-      // Then emit through socket
-      if (socket && isConnected) {
-        try {
-          socket.emit('direct-message', {
-            ...message,
-            conversationId
-          })
-        } catch (e) {
-          console.error('Failed to emit message through socket:', e)
-          // Don't throw here as the message was already saved
-        }
-      }
-
-      // Scroll to bottom after message is sent
       scrollToBottom()
     } catch (error) {
-      console.error('Failed to send message:', error)
+      console.error('Error sending message:', error)
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to send message',
@@ -398,98 +383,99 @@ export default function DirectMessageChat({ conversationId, otherUser }: DirectM
     }
   }
 
-  // Socket handling
+  // Socket event handling
   useEffect(() => {
-    if (!socket || !session?.user?.id) return
+    if (!socket) return
 
-    console.log('Setting up socket handlers for conversation:', conversationId)
+    const joinConversation = () => {
+      if (isConnected) {
+        console.log('Joining conversation:', conversationId)
+        socket.emit('join_conversation', conversationId)
+      }
+    }
 
-    const handleNewMessage = (message: DirectMessage) => {
-      console.log('Received direct message:', message)
-      if (message.conversationId !== conversationId) {
-        console.log('Message not for this conversation, ignoring')
+    const handleDirectMessageReceived = (message: DirectMessage) => {
+      console.log('Direct message received:', message)
+      if (message.conversationId === conversationId) {
+        setMessages(prev => [...prev, message])
+        scrollToBottom()
+      }
+    }
+
+    const handleReactionReceived = (data: { messageId?: string, directMessageId?: string, reaction: any, conversationId: string }) => {
+      console.log('Reaction received:', data)
+      if (data.conversationId !== conversationId) {
+        console.log('Reaction not for this conversation, ignoring')
         return
       }
 
-      setMessages(prev => {
-        if (prev.some(m => m.id === message.id)) {
-          console.log('Message already exists, skipping')
-          return prev
-        }
-        console.log('Adding new message to state')
-        return [...prev, message]
-      })
-      scrollToBottom()
-    }
-
-    const handleProfileUpdate = (updatedUser: User) => {
+      const targetMessageId = data.directMessageId || data.messageId
       setMessages(prev =>
-        prev.map(message =>
-          message.user.id === updatedUser.id
-            ? { ...message, user: { ...message.user, ...updatedUser } }
-            : message
+        prev.map(m =>
+          m.id === targetMessageId
+            ? {
+                ...m,
+                reactions: [...(m.reactions || []), data.reaction],
+              }
+            : m
         )
       )
     }
 
-    const joinRoom = () => {
-      console.log('Joining conversation room:', conversationId)
-      socket.emit('join-conversation', conversationId)
+    const handleReactionRemoved = (data: { messageId?: string, directMessageId?: string, reactionId: string, conversationId: string }) => {
+      console.log('Reaction removed:', data)
+      if (data.conversationId !== conversationId) {
+        console.log('Reaction removal not for this conversation, ignoring')
+        return
+      }
+
+      const targetMessageId = data.directMessageId || data.messageId
+      setMessages(prev =>
+        prev.map(m =>
+          m.id === targetMessageId
+            ? {
+                ...m,
+                reactions: (m.reactions || []).filter(r => r.id !== data.reactionId),
+              }
+            : m
+        )
+      )
     }
 
-    // Join room immediately if connected
-    if (socket.connected) {
-      console.log('Socket already connected, joining room')
-      joinRoom()
+    // Join conversation when socket connects
+    if (isConnected) {
+      joinConversation()
     }
 
-    // Set up event listeners
-    socket.on('connect', () => {
-      console.log('Socket connected, joining room')
-      joinRoom()
-    })
-    socket.on('direct-message', handleNewMessage)
-    socket.on('profile-update', handleProfileUpdate)
+    socket.on('connect', joinConversation)
+    socket.on('direct_message_received', handleDirectMessageReceived)
+    socket.on('reaction_received', handleReactionReceived)
+    socket.on('reaction_removed', handleReactionRemoved)
 
     // Cleanup
     return () => {
-      console.log('Cleaning up socket handlers for conversation:', conversationId)
-      socket.emit('leave-conversation', conversationId)
-      socket.off('connect', joinRoom)
-      socket.off('direct-message', handleNewMessage)
-      socket.off('profile-update', handleProfileUpdate)
+      console.log('Cleaning up socket handlers')
+      socket.off('connect', joinConversation)
+      socket.off('direct_message_received', handleDirectMessageReceived)
+      socket.off('reaction_received', handleReactionReceived)
+      socket.off('reaction_removed', handleReactionRemoved)
     }
-  }, [socket, conversationId, session?.user?.id])
+  }, [socket, isConnected, conversationId])
 
-  // Initial messages fetch with error handling
+  // Fetch initial messages
   useEffect(() => {
     async function fetchMessages() {
       try {
         setIsLoading(true)
         const response = await fetch(`/api/conversations/${conversationId}/messages`)
-        
-        if (!response.ok) {
-          let errorMessage = 'Failed to fetch messages'
-          try {
-            const errorData = await response.json()
-            errorMessage = errorData.error || errorMessage
-          } catch (e) {
-            console.error('Failed to parse error response:', e)
-          }
-          throw new Error(errorMessage)
-        }
-
+        if (!response.ok) throw new Error('Failed to fetch messages')
         const data = await response.json()
-        if (!Array.isArray(data)) {
-          throw new Error('Invalid response format from server')
-        }
-
         setMessages(data)
       } catch (error) {
-        console.error('Failed to fetch messages:', error)
+        console.error('Error fetching messages:', error)
         toast({
           title: 'Error',
-          description: error instanceof Error ? error.message : 'Failed to load messages',
+          description: 'Failed to load messages',
           variant: 'destructive',
         })
       } finally {
@@ -497,10 +483,10 @@ export default function DirectMessageChat({ conversationId, otherUser }: DirectM
       }
     }
 
-    if (session?.user?.id) {
+    if (conversationId) {
       fetchMessages()
     }
-  }, [conversationId, toast, session?.user?.id])
+  }, [conversationId])
 
   // Auto-scroll
   useEffect(() => {
@@ -523,6 +509,22 @@ export default function DirectMessageChat({ conversationId, otherUser }: DirectM
     }, 0)
   }
 
+  // Handle thread reply count updates
+  const handleThreadReplyCountUpdate = (update: { messageId: string; replyCount: number; conversationId?: string }) => {
+    console.log('Received thread reply count update:', update)
+    if (update.conversationId !== conversationId) return
+
+    setMessages((prev) => prev.map((message) => {
+      if (message.id === update.messageId) {
+        return {
+          ...message,
+          replyCount: (message.replyCount || 0) + update.replyCount
+        }
+      }
+      return message
+    }))
+  }
+
   if (isLoading) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -534,7 +536,7 @@ export default function DirectMessageChat({ conversationId, otherUser }: DirectM
   return (
     <div className="flex h-full flex-1 flex-col">
       {/* Chat header */}
-      <div className="flex h-12 items-center border-b border-gray-700 px-4">
+      <div className="flex h-12 items-center justify-between border-b border-gray-700 px-4">
         <div className="flex items-center">
           <UserAvatar user={otherUser} />
           <div className="ml-3">
@@ -544,6 +546,42 @@ export default function DirectMessageChat({ conversationId, otherUser }: DirectM
             </p>
           </div>
         </div>
+        <SearchBar 
+          onSearch={async (query) => {
+            try {
+              const response = await fetch(`/api/conversations/${conversationId}/search?query=${encodeURIComponent(query)}`)
+              if (!response.ok) throw new Error('Failed to search messages')
+              
+              const results = await response.json()
+              
+              // Find all messages that match the search query
+              const matchingMessageIds = results
+                .filter((msg: any) => msg.content.toLowerCase().includes(query.toLowerCase()))
+                .map((msg: any) => msg.id)
+              
+              if (matchingMessageIds.length > 0) {
+                return matchingMessageIds
+              }
+              
+              toast({
+                title: 'No results found',
+                description: 'No messages match your search query.',
+                variant: 'default',
+              })
+              
+              return undefined
+            } catch (error) {
+              console.error('Error searching messages:', error)
+              toast({
+                title: 'Error',
+                description: 'Failed to search messages',
+                variant: 'destructive',
+              })
+              return undefined
+            }
+          }}
+          placeholder={`Search messages with ${otherUser.name}...`}
+        />
       </div>
 
       {/* Messages area */}
@@ -636,6 +674,17 @@ export default function DirectMessageChat({ conversationId, otherUser }: DirectM
           </div>
         </form>
       </div>
+
+      {/* Thread panel */}
+      {selectedThread && (
+        <ThreadView
+          parentMessage={selectedThread}
+          isOpen={true}
+          onClose={() => setSelectedThread(null)}
+          isDirectMessage={true}
+          conversationId={conversationId}
+        />
+      )}
     </div>
   )
 } 

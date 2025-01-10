@@ -136,7 +136,10 @@ export async function GET(req: Request) {
     }
 
     const messages = await prisma.message.findMany({
-      where: { channelId },
+      where: { 
+        channelId,
+        replyToId: null // Only fetch top-level messages, not replies
+      },
       orderBy: { createdAt: 'asc' },
       include: {
         user: {
@@ -147,10 +150,33 @@ export async function GET(req: Request) {
           },
         },
         files: true,
+        replies: {
+          select: {
+            id: true,
+          },
+        },
+        reactions: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                image: true,
+              },
+            },
+          },
+        },
       },
     })
 
-    return NextResponse.json(messages)
+    // Transform messages to include reply count
+    const transformedMessages = messages.map(message => ({
+      ...message,
+      replyCount: message.replies.length,
+      replies: undefined, // Remove the replies array from the response
+    }))
+
+    return NextResponse.json(transformedMessages)
   } catch (error) {
     console.error('Error fetching messages:', error)
     return NextResponse.json(

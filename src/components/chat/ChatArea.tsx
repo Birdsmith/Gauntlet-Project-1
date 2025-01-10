@@ -2,10 +2,15 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useSession } from 'next-auth/react'
-import { Hash, Plus, Smile, Send } from 'lucide-react'
+import { Hash, Plus, Smile, Send, MessageSquare } from 'lucide-react'
 import { useSocket } from '@/hooks/useSocket'
 import { toast } from '@/components/ui/use-toast'
 import { EmojiPicker } from './EmojiPicker'
+import { ThreadView } from './ThreadView'
+import { cn } from '@/lib/utils'
+import { MessageReactions } from './MessageReactions'
+import type { ChannelMessage, Channel, FileAttachment, Reaction, ReactionEvent } from '@/types/chat'
+import { SearchBar } from './SearchBar'
 
 const ALLOWED_FILE_TYPES = [
   'image/jpeg',
@@ -19,51 +24,23 @@ const ALLOWED_FILE_TYPES = [
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
 
-interface FileAttachment {
-  id: string
-  name: string
-  size: number
-  type: string
-  url: string
-  createdAt: string
-  messageId: string
-}
-
-interface Message {
-  id: string
-  content: string
-  createdAt: string
-  channelId: string
-  files: FileAttachment[]
-  user: {
-    id: string
-    name: string | null
-    image: string | null
-  }
-}
-
-interface Channel {
-  id: string
-  name: string
-  description: string | null
-}
-
 interface ChatAreaProps {
   channelId: string
 }
 
 export default function ChatArea({ channelId }: ChatAreaProps) {
   const { data: session } = useSession()
-  const [messages, setMessages] = useState<Message[]>([])
+  const [messages, setMessages] = useState<ChannelMessage[]>([])
   const [channel, setChannel] = useState<Channel | null>(null)
   const [newMessage, setNewMessage] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [isFilePickerOpen, setIsFilePickerOpen] = useState(false)
+  const [selectedThread, setSelectedThread] = useState<ChannelMessage | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const { socket, isConnected } = useSocket()
+  const { socket, isConnected, sendMessage } = useSocket()
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
@@ -138,50 +115,31 @@ export default function ChatArea({ channelId }: ChatAreaProps) {
     }, 0)
   }
 
+  // Socket event handling
   useEffect(() => {
-    async function fetchChannel() {
-      try {
-        const response = await fetch(`/api/channels/${channelId}`)
-        const data = await response.json()
-        setChannel(data)
-      } catch (error) {
-        console.error('Failed to fetch channel:', error)
-      }
+    if (!socket || !isConnected || !channelId) return
+
+    console.log('Setting up socket handlers for channel:', channelId)
+
+    // Join the channel immediately
+    const joinChannel = () => {
+      console.log('Joining channel:', channelId)
+      socket.emit('join-channel', channelId)
     }
 
-    async function fetchMessages() {
-      try {
-        const response = await fetch(`/api/messages?channelId=${channelId}`)
-        const data = await response.json()
-        setMessages(data)
-      } catch (error) {
-        console.error('Failed to fetch messages:', error)
-      } finally {
-        setIsLoading(false)
-      }
-    }
+    // Join immediately and also handle reconnections
+    joinChannel()
+    socket.on('connect', joinChannel)
 
-    setIsLoading(true)
-    fetchChannel()
-    fetchMessages()
-  }, [channelId])
-
-  useEffect(() => {
-    if (!socket || !session?.user) return
-
-    // Debug socket connection
-    console.log('Socket connected:', isConnected)
-    console.log('Current channel:', channelId)
-
-    // Listen for new messages
-    const handleNewMessage = (message: Message) => {
-      console.log('Received new message event:', message)
+    // Handle incoming messages
+    const handleMessageReceived = (message: ChannelMessage) => {
+      console.log('Received message:', message)
       if (message.channelId !== channelId) {
         console.log('Message not for this channel, ignoring')
         return
       }
 
-      setMessages((prev) => {
+      setMessages(prev => {
         // Check if message already exists
         if (prev.some(m => m.id === message.id)) {
           console.log('Message already exists, skipping')
@@ -193,44 +151,106 @@ export default function ChatArea({ channelId }: ChatAreaProps) {
       scrollToBottom()
     }
 
-    // Listen for profile updates
-    const handleProfileUpdate = (updatedUser: { id: string; name: string | null; image: string | null }) => {
-      setMessages((prev) =>
-        prev.map((message) =>
-          message.user.id === updatedUser.id
-            ? {
-                ...message,
-                user: {
-                  ...message.user,
-                  name: updatedUser.name,
-                  image: updatedUser.image,
-                },
-              }
-            : message
+    // Handle incoming reactions
+    const handleReactionReceived = (data: ReactionEvent) => {
+      console.log('Received reaction:', data)
+      if (data.channelId !== channelId) {
+        console.log('Reaction not for this channel, ignoring')
+        return
+      }
+
+      // Skip if this is our own reaction (we've already added it locally)
+      if (data.userId === session?.user?.id) {
+        console.log('Skipping own reaction (already added locally)')
+        return
+      }
+
+      const { channelId: _, conversationId: __, ...reactionData } = data
+      setMessages(prev =>
+        prev.map(m =>
+          m.id === data.messageId
+            ? { ...m, reactions: [...(m.reactions || []), { ...reactionData, messageId: data.messageId }] }
+            : m
         )
       )
     }
 
-    // Join channel when socket connects
-    const joinChannel = () => {
-      console.log('Joining channel:', channelId)
-      socket.emit('join-channel', channelId)
+    // Handle reaction removals
+    const handleReactionRemoved = (data: { messageId: string, reactionId: string, channelId: string }) => {
+      console.log('Reaction removed:', data)
+      if (data.channelId !== channelId) {
+        console.log('Reaction removal not for this channel, ignoring')
+        return
+      }
+
+      setMessages(prev =>
+        prev.map(m =>
+          m.id === data.messageId
+            ? {
+                ...m,
+                reactions: (m.reactions || []).filter(r => r.id !== data.reactionId),
+              }
+            : m
+        )
+      )
     }
 
-    if (socket.connected) joinChannel()
-    socket.on('connect', joinChannel)
-    socket.on('new-message', handleNewMessage)
-    socket.on('profile-update', handleProfileUpdate)
+    socket.on('message_received', handleMessageReceived)
+    socket.on('reaction_received', handleReactionReceived)
+    socket.on('reaction_removed', handleReactionRemoved)
 
-    // Cleanup when leaving the channel
+    // Cleanup
     return () => {
-      console.log('Leaving channel:', channelId)
-      socket.emit('leave-channel', channelId)
+      console.log('Cleaning up socket handlers')
       socket.off('connect', joinChannel)
-      socket.off('new-message', handleNewMessage)
-      socket.off('profile-update', handleProfileUpdate)
+      socket.off('message_received', handleMessageReceived)
+      socket.off('reaction_received', handleReactionReceived)
+      socket.off('reaction_removed', handleReactionRemoved)
     }
-  }, [socket, channelId, session?.user, isConnected])
+  }, [socket, isConnected, channelId])
+
+  // Fetch initial messages
+  useEffect(() => {
+    async function fetchChannel() {
+      try {
+        const response = await fetch(`/api/channels/${channelId}`)
+        if (!response.ok) throw new Error('Failed to fetch channel')
+        const data = await response.json()
+        setChannel(data)
+      } catch (error) {
+        console.error('Error fetching channel:', error)
+        toast({
+          title: 'Error',
+          description: 'Failed to load channel',
+          variant: 'destructive',
+        })
+      }
+    }
+
+    async function fetchMessages() {
+      try {
+        setIsLoading(true)
+        const response = await fetch(`/api/channels/${channelId}/messages`)
+        if (!response.ok) throw new Error('Failed to fetch messages')
+        const data = await response.json()
+        setMessages(data)
+      } catch (error) {
+        console.error('Error fetching messages:', error)
+        toast({
+          title: 'Error',
+          description: 'Failed to load messages',
+          variant: 'destructive',
+        })
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    if (channelId) {
+      fetchChannel()
+      fetchMessages()
+    }
+  }, [channelId])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -242,51 +262,59 @@ export default function ChatArea({ channelId }: ChatAreaProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if ((!newMessage.trim() && !selectedFile) || !session?.user) return
+    if (!newMessage.trim() && !selectedFile) return
 
     try {
-      const formData = new FormData()
-      formData.append('content', newMessage)
-      formData.append('channelId', channelId)
+      let fileData: { name: string; url: string; size: number; type: string } | null = null
       if (selectedFile) {
+        const formData = new FormData()
         formData.append('file', selectedFile)
+        const response = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        })
+        fileData = await response.json()
       }
 
-      const response = await fetch('/api/messages', {
+      // Send to server via API
+      const response = await fetch(`/api/channels/${channelId}/messages`, {
         method: 'POST',
-        body: formData,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content: newMessage.trim(),
+          file: fileData,
+        }),
       })
 
-      if (!response.ok) throw new Error('Failed to send message')
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to send message')
+      }
 
-      const message = await response.json()
-      
-      // Clear input and selected file before sending for better UX
+      const sentMessage: ChannelMessage = await response.json()
+
+      // Update local state
+      setMessages(prev => [...prev, sentMessage])
+
+      // Emit via socket for real-time
+      await sendMessage('new_message', {
+        ...sentMessage,
+        channelId,
+      })
+
       setNewMessage('')
       setSelectedFile(null)
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
-
-      // Debug socket state
-      console.log('Socket connected before emit:', isConnected)
-      
-      // Emit the message through socket
-      if (socket && isConnected) {
-        console.log('Emitting message:', message)
-        socket.emit('send-message', message)
-      } else {
-        console.warn('Socket not connected, message will not be real-time')
-      }
-
-      // Update local state
-      setMessages(prev => [...prev, message])
       scrollToBottom()
     } catch (error) {
-      console.error('Failed to send message:', error)
+      console.error('Error sending message:', error)
       toast({
         title: 'Error',
-        description: 'Failed to send message. Please try again.',
+        description: error instanceof Error ? error.message : 'Failed to send message',
         variant: 'destructive',
       })
     }
@@ -303,14 +331,52 @@ export default function ChatArea({ channelId }: ChatAreaProps) {
   return (
     <div className="flex h-full flex-1 flex-col">
       {/* Channel header */}
-      <div className="flex h-12 items-center border-b border-gray-700 px-4">
-        <Hash className="mr-2 h-5 w-5 text-gray-400" />
-        <h2 className="font-medium text-white">{channel?.name}</h2>
-        {channel?.description && (
-          <div className="ml-2 h-6 border-l border-gray-700 pl-2">
-            <p className="text-sm text-gray-400">{channel.description}</p>
-          </div>
-        )}
+      <div className="flex h-12 items-center justify-between border-b border-gray-700 px-4">
+        <div className="flex items-center">
+          <Hash className="mr-2 h-5 w-5 text-gray-400" />
+          <h2 className="font-medium text-white">{channel?.name}</h2>
+          {channel?.description && (
+            <div className="ml-4 flex items-center border-l border-gray-700 pl-4">
+              <p className="text-sm text-gray-300 line-clamp-1">{channel.description}</p>
+            </div>
+          )}
+        </div>
+        <SearchBar 
+          onSearch={async (query) => {
+            try {
+              const response = await fetch(`/api/channels/${channelId}/search?query=${encodeURIComponent(query)}`)
+              if (!response.ok) throw new Error('Failed to search messages')
+              
+              const results = await response.json()
+              
+              // Find all messages that match the search query
+              const matchingMessageIds = results
+                .filter((msg: any) => msg.content.toLowerCase().includes(query.toLowerCase()))
+                .map((msg: any) => msg.id)
+              
+              if (matchingMessageIds.length > 0) {
+                return matchingMessageIds
+              }
+              
+              toast({
+                title: 'No results found',
+                description: 'No messages match your search query.',
+                variant: 'default',
+              })
+              
+              return undefined
+            } catch (error) {
+              console.error('Error searching messages:', error)
+              toast({
+                title: 'Error',
+                description: 'Failed to search messages',
+                variant: 'destructive',
+              })
+              return undefined
+            }
+          }}
+          placeholder={`Search messages in #${channel?.name}...`}
+        />
       </div>
 
       {/* Messages area */}
@@ -333,7 +399,11 @@ export default function ChatArea({ channelId }: ChatAreaProps) {
         ) : (
           <div className="space-y-4">
             {messages.map((message) => (
-              <div key={message.id} className="flex items-start space-x-3">
+              <div 
+                key={message.id}
+                id={`message-${message.id}`}
+                className="group relative flex items-start space-x-3 hover:bg-gray-800/50 px-2 py-1 rounded transition-colors duration-200"
+              >
                 <div className="relative h-10 w-10 flex-shrink-0">
                   {message.user.image ? (
                     <img
@@ -347,12 +417,12 @@ export default function ChatArea({ channelId }: ChatAreaProps) {
                     </div>
                   )}
                 </div>
-                <div>
-                  <div className="flex items-baseline space-x-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start gap-2">
                     <span className="font-medium text-white">
                       {message.user.name}
                     </span>
-                    <span className="text-xs text-gray-400">
+                    <span className="text-xs text-gray-400 mt-1">
                       {new Date(message.createdAt).toLocaleString()}
                     </span>
                   </div>
@@ -360,7 +430,6 @@ export default function ChatArea({ channelId }: ChatAreaProps) {
                   {message.files?.map((file) => (
                     <div key={file.id} className="mt-2">
                       {file.type.startsWith('image/') ? (
-                        // Image files
                         <div className="mt-2 max-w-2xl">
                           <img
                             src={file.url}
@@ -372,52 +441,75 @@ export default function ChatArea({ channelId }: ChatAreaProps) {
                             {file.name} ({(file.size / 1024).toFixed(1)} KB)
                           </div>
                         </div>
-                      ) : file.type === 'text/plain' ? (
-                        // Text files
-                        <div className="mt-2 max-w-2xl">
-                          <a
-                            href={file.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="group block rounded-lg border border-gray-700 bg-gray-800 p-4 hover:border-gray-600"
-                          >
-                            <div className="flex items-center gap-2">
-                              <svg className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                              </svg>
-                              <span className="text-sm text-gray-300 group-hover:text-white">
-                                {file.name}
-                              </span>
-                              <span className="ml-auto text-xs text-gray-500">
-                                {(file.size / 1024).toFixed(1)} KB
-                              </span>
-                            </div>
-                          </a>
-                        </div>
                       ) : (
-                        // Other files
-                        <div className="mt-2 max-w-2xl">
-                          <a
-                            href={file.url}
-                            download={file.name}
-                            className="group block rounded-lg border border-gray-700 bg-gray-800 p-4 hover:border-gray-600"
-                          >
-                            <div className="flex items-center gap-2">
-                              <svg className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-                              </svg>
-                              <span className="text-sm text-gray-300 group-hover:text-white">
-                                {file.name}
-                              </span>
-                              <span className="ml-auto text-xs text-gray-500">
-                                {(file.size / 1024).toFixed(1)} KB
-                              </span>
-                            </div>
-                          </a>
-                        </div>
+                        <a
+                          href={file.url}
+                          download={file.name}
+                          className="group block rounded-lg border border-gray-700 bg-gray-800 p-4 hover:border-gray-600"
+                        >
+                          <div className="flex items-center gap-2">
+                            <svg className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                            </svg>
+                            <span className="text-sm text-gray-300 group-hover:text-white">
+                              {file.name}
+                            </span>
+                            <span className="ml-auto text-xs text-gray-500">
+                              {(file.size / 1024).toFixed(1)} KB
+                            </span>
+                          </div>
+                        </a>
                       )}
                     </div>
                   ))}
+                  {/* Reactions and Reply button */}
+                  <div className="flex items-center gap-2">
+                    <div className={cn(
+                      "transition-opacity",
+                      message.reactions?.length ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                    )}>
+                      <MessageReactions
+                        messageId={message.id}
+                        channelId={channelId}
+                        reactions={message.reactions}
+                        onReactionAdd={(reaction) =>
+                          setMessages((prev) =>
+                            prev.map((m) =>
+                              m.id === message.id
+                                ? { ...m, reactions: [...(m.reactions || []), reaction] }
+                                : m
+                            )
+                          )
+                        }
+                        onReactionRemove={(reactionId) =>
+                          setMessages((prev) =>
+                            prev.map((m) =>
+                              m.id === message.id
+                                ? {
+                                    ...m,
+                                    reactions: m.reactions.filter((r) => r.id !== reactionId),
+                                  }
+                                : m
+                            )
+                          )
+                        }
+                      />
+                    </div>
+                    <button
+                      onClick={() => setSelectedThread(message)}
+                      className={cn(
+                        "flex items-center gap-1 text-xs text-gray-400 hover:text-gray-300 transition-opacity",
+                        message.replyCount ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                      )}
+                    >
+                      <MessageSquare className="h-4 w-4" />
+                      {message.replyCount ? (
+                        <span className="font-medium">{message.replyCount} {message.replyCount === 1 ? 'reply' : 'replies'}</span>
+                      ) : (
+                        <span>Reply</span>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -483,6 +575,16 @@ export default function ChatArea({ channelId }: ChatAreaProps) {
           </div>
         </form>
       </div>
+
+      {/* Thread panel */}
+      {selectedThread && (
+        <ThreadView
+          parentMessage={selectedThread}
+          isOpen={true}
+          onClose={() => setSelectedThread(null)}
+          channelId={channelId}
+        />
+      )}
     </div>
   )
 } 
