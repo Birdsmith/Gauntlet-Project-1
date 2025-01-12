@@ -1,4 +1,4 @@
-import { ToastActionElement, Toast, ToastOptions } from "@/components/ui/toast"
+import { ToastActionElement, Toast, ToastOptions } from '@/components/ui/toast'
 
 export interface ToastState {
   toasts: Toast[]
@@ -18,4 +18,4 @@ export declare function toast(options: ToastOptions): {
   id: string
   dismiss: () => void
   update: (props: Toast) => void
-} 
+}

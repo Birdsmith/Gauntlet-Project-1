@@ -6,10 +6,7 @@ import { writeFile, mkdir } from 'fs/promises'
 import path from 'path'
 import { existsSync } from 'fs'
 
-export async function GET(
-  req: Request,
-  { params }: { params: { conversationId: string } }
-) {
+export async function GET(req: Request, { params }: { params: { conversationId: string } }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
@@ -33,7 +30,7 @@ export async function GET(
     const messages = await prisma.directMessage.findMany({
       where: {
         conversationId: params.conversationId,
-        replyToId: null
+        replyToId: null,
       },
       orderBy: {
         createdAt: 'asc',
@@ -76,17 +73,11 @@ export async function GET(
     return NextResponse.json(transformedMessages)
   } catch (error) {
     console.error('Error fetching messages:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch messages' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 })
   }
 }
 
-export async function POST(
-  req: Request,
-  { params }: { params: { conversationId: string } }
-) {
+export async function POST(req: Request, { params }: { params: { conversationId: string } }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user) {
@@ -107,7 +98,7 @@ export async function POST(
     }
 
     const isParticipant = conversation.participants.some(
-      (participant) => participant.userId === session.user.id
+      participant => participant.userId === session.user.id
     )
 
     if (!isParticipant) {
@@ -121,7 +112,7 @@ export async function POST(
     const contentType = req.headers.get('content-type') || ''
     if (contentType.includes('multipart/form-data')) {
       const formData = await req.formData()
-      content = formData.get('content') as string || ''
+      content = (formData.get('content') as string) || ''
       const file = formData.get('file') as File
       if (file) {
         const bytes = await file.arrayBuffer()
@@ -132,14 +123,14 @@ export async function POST(
         if (!existsSync(uploadDir)) {
           await mkdir(uploadDir, { recursive: true })
         }
-        
+
         // Generate unique filename
         const uniqueFilename = `${Date.now()}-${Math.random().toString(36).substr(2, 6)}${path.extname(file.name)}`
         const filePath = path.join(uploadDir, uniqueFilename)
-        
+
         // Save file
         await writeFile(filePath, buffer)
-        
+
         fileData = {
           name: file.name,
           url: `/uploads/${uniqueFilename}`,
@@ -189,9 +180,6 @@ export async function POST(
     return NextResponse.json(message)
   } catch (error) {
     console.error('Message creation error:', error)
-    return NextResponse.json(
-      { error: 'Failed to create message' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to create message' }, { status: 500 })
   }
-} 
+}

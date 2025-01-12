@@ -1,15 +1,22 @@
 'use client'
 
-import { useEffect, useState } from "react"
-import { useSession } from "next-auth/react"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { useToast } from "@/hooks/use-toast"
-import { useRouter } from "next/navigation"
-import { ChevronDown, Plus, Search } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { useEffect, useState } from 'react'
+import { useSession } from 'next-auth/react'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { useToast } from '@/hooks/use-toast'
+import { useRouter } from 'next/navigation'
+import { ChevronDown, Plus, Search } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { useSocket } from '@/contexts/SocketContext'
 
 interface User {
   id: string
@@ -32,27 +39,38 @@ export function DirectMessagesList() {
   const { data: session } = useSession()
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [loading, setLoading] = useState(true)
-  const [searchQuery, setSearchQuery] = useState("")
+  const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<User[]>([])
   const { toast } = useToast()
   const router = useRouter()
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const { socket } = useSocket()
 
   useEffect(() => {
-    fetchConversations()
-  }, [])
+    if (session?.user) {
+      fetchConversations()
+    } else {
+      setConversations([])
+      setLoading(false)
+    }
+  }, [session])
 
   const fetchConversations = async () => {
+    if (!session?.user) return
+
     try {
-      const response = await fetch("/api/conversations")
+      const response = await fetch('/api/conversations')
+      if (!response.ok) throw new Error('Failed to fetch conversations')
       const data = await response.json()
-      setConversations(data)
+      setConversations(data || [])
       setLoading(false)
     } catch (error) {
+      console.error('Error fetching conversations:', error)
+      setConversations([])
       toast({
-        title: "Error",
-        description: "Failed to load conversations",
-        variant: "destructive",
+        title: 'Error',
+        description: 'Failed to load conversations',
+        variant: 'destructive',
       })
       setLoading(false)
     }
@@ -73,25 +91,25 @@ export function DirectMessagesList() {
       setSearchResults(data)
     } catch (error) {
       toast({
-        title: "Error",
-        description: "Failed to search users",
-        variant: "destructive",
+        title: 'Error',
+        description: 'Failed to search users',
+        variant: 'destructive',
       })
     }
   }
 
   const startConversation = async (userId: string) => {
     try {
-      const response = await fetch("/api/conversations", {
-        method: "POST",
+      const response = await fetch('/api/conversations', {
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({ userId }),
       })
 
       if (!response.ok) {
-        throw new Error("Failed to create conversation")
+        throw new Error('Failed to create conversation')
       }
 
       const data = await response.json()
@@ -101,23 +119,49 @@ export function DirectMessagesList() {
       router.push(`/?${params.toString()}`)
     } catch (error) {
       toast({
-        title: "Error",
-        description: "Failed to start conversation",
-        variant: "destructive",
+        title: 'Error',
+        description: 'Failed to start conversation',
+        variant: 'destructive',
       })
     }
   }
+
+  // Add socket event listener for user status updates
+  useEffect(() => {
+    if (!socket) return
+
+    const handleUserStatus = (data: { userId: string; isOnline: boolean }) => {
+      setConversations(prev =>
+        prev.map(conv => ({
+          ...conv,
+          participants: conv.participants.map(p =>
+            p.id === data.userId ? { ...p, isOnline: data.isOnline } : p
+          ),
+        }))
+      )
+
+      setSearchResults(prev =>
+        prev.map(user => (user.id === data.userId ? { ...user, isOnline: data.isOnline } : user))
+      )
+    }
+
+    socket.on('user-status', handleUserStatus)
+
+    return () => {
+      socket.off('user-status', handleUserStatus)
+    }
+  }, [socket])
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto bg-gray-800 p-2">
       {/* Direct Messages Section */}
       <div className="mb-2">
         <div className="flex items-center justify-between px-1 py-1.5">
-          <button 
+          <button
             onClick={() => setIsCollapsed(!isCollapsed)}
             className="flex items-center text-xs font-semibold uppercase text-gray-400 hover:text-gray-300"
           >
-            <ChevronDown 
+            <ChevronDown
               className={`mr-1 h-3 w-3 transform transition-transform duration-200 ${
                 isCollapsed ? '-rotate-90' : ''
               }`}
@@ -136,9 +180,7 @@ export function DirectMessagesList() {
               </DialogHeader>
               <div className="mt-4 space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300">
-                    SEARCH USERS
-                  </label>
+                  <label className="block text-sm font-medium text-gray-300">SEARCH USERS</label>
                   <div className="relative mt-1">
                     <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
                     <Input
@@ -152,11 +194,11 @@ export function DirectMessagesList() {
                 <ScrollArea className="mt-4 max-h-[300px]">
                   {searchResults.length === 0 ? (
                     <p className="py-8 text-center text-sm text-gray-400">
-                      {searchQuery ? "No users found" : "Type to search users"}
+                      {searchQuery ? 'No users found' : 'Type to search users'}
                     </p>
                   ) : (
                     <div className="space-y-2">
-                      {searchResults.map((user) => (
+                      {searchResults.map(user => (
                         <button
                           key={user.id}
                           onClick={() => startConversation(user.id)}
@@ -166,27 +208,25 @@ export function DirectMessagesList() {
                             {user.image ? (
                               <img
                                 src={user.image}
-                                alt={user.name || "User"}
+                                alt={user.name || 'User'}
                                 className="h-full w-full rounded-full object-cover"
                               />
                             ) : (
                               <div className="flex h-full w-full items-center justify-center rounded-full bg-gray-700 text-sm font-medium text-gray-300">
-                                {user.name?.[0] || "?"}
+                                {user.name?.[0] || '?'}
                               </div>
                             )}
                             <span
                               className={cn(
-                                "absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-gray-900",
-                                user.isOnline ? "bg-green-500" : "bg-gray-500"
+                                'absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-gray-900',
+                                user.isOnline ? 'bg-green-500' : 'bg-gray-500'
                               )}
                             />
                           </div>
                           <div>
-                            <p className="font-medium text-white">
-                              {user.name || "Unknown User"}
-                            </p>
+                            <p className="font-medium text-white">{user.name || 'Unknown User'}</p>
                             <p className="text-sm text-gray-400">
-                              {user.isOnline ? "Online" : "Offline"}
+                              {user.isOnline ? 'Online' : 'Offline'}
                             </p>
                           </div>
                         </button>
@@ -206,14 +246,10 @@ export function DirectMessagesList() {
                 <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-500 border-t-transparent"></div>
               </div>
             ) : conversations.length === 0 ? (
-              <div className="px-2 py-1 text-sm text-gray-400">
-                No conversations yet
-              </div>
+              <div className="px-2 py-1 text-sm text-gray-400">No conversations yet</div>
             ) : (
-              conversations.map((conversation) => {
-                const otherUser = conversation.participants.find(
-                  (p) => p.id !== session?.user?.id
-                )
+              conversations.map(conversation => {
+                const otherUser = conversation.participants.find(p => p.id !== session?.user?.id)
                 if (!otherUser) return null
 
                 return (
@@ -231,7 +267,7 @@ export function DirectMessagesList() {
                       {otherUser.image ? (
                         <img
                           src={otherUser.image}
-                          alt={otherUser.name || "User"}
+                          alt={otherUser.name || 'User'}
                           className="h-6 w-6 rounded-full"
                         />
                       ) : (
@@ -255,4 +291,4 @@ export function DirectMessagesList() {
       </div>
     </div>
   )
-} 
+}

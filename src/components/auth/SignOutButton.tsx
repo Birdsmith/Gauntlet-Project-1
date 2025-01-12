@@ -17,4 +17,4 @@ export function SignOutButton({ className }: SignOutButtonProps) {
       Sign Out
     </button>
   )
-} 
+}

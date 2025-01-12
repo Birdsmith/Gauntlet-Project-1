@@ -66,7 +66,7 @@ export default function SignIn() {
       <div className="relative w-full max-w-md p-8 bg-gray-900/80 backdrop-blur-sm rounded-lg shadow-xl">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">Welcome back!</h1>
-          <p className="text-gray-300">We're so excited to see you again!</p>
+          <p className="text-gray-300">We&apos;re so excited to see you again!</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -83,7 +83,7 @@ export default function SignIn() {
             <input
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={e => setEmail(e.target.value)}
               className="w-full px-3 py-2.5 bg-gray-800/50 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="Enter your email"
               required
@@ -98,7 +98,7 @@ export default function SignIn() {
             <input
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={e => setPassword(e.target.value)}
               className="w-full px-3 py-2.5 bg-gray-800/50 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="Enter your password"
               required
@@ -106,8 +106,8 @@ export default function SignIn() {
             />
           </div>
 
-          <Link 
-            href="/auth/forgot-password" 
+          <Link
+            href="/auth/forgot-password"
             className="block text-sm text-blue-400 hover:underline"
           >
             Forgot your password?
@@ -137,4 +137,4 @@ export default function SignIn() {
       </div>
     </div>
   )
-} 
+}

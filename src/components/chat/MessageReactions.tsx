@@ -1,5 +1,5 @@
 import { useSession } from 'next-auth/react'
-import { useSocket } from '@/hooks/useSocket'
+import { useSocket } from '@/contexts/SocketContext'
 import { EmojiPicker } from './EmojiPicker'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -42,7 +42,7 @@ export function MessageReactions({
     const existingReaction = reactions.find(
       r => r.userId === session.user.id && r.emoji === emoji.native
     )
-    
+
     if (existingReaction) {
       // If user already reacted with this emoji, remove it
       await handleReactionClick(existingReaction.id)
@@ -50,17 +50,19 @@ export function MessageReactions({
     }
 
     try {
+      // Prepare the request body based on whether it's a channel or direct message
+      const requestBody = {
+        emoji: emoji.native,
+        messageId,
+        ...(channelId ? { channelId } : { conversationId }),
+      }
+
       const response = await fetch('/api/reactions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          emoji: emoji.native,
-          messageId,
-          channelId,
-          conversationId,
-        }),
+        body: JSON.stringify(requestBody),
       })
 
       if (!response.ok) {
@@ -70,18 +72,21 @@ export function MessageReactions({
 
       const newReaction: Reaction = await response.json()
 
+      // Call onReactionAdd before emitting socket event to ensure local state is updated first
+      onReactionAdd(newReaction)
+
       // Emit via socket for real-time updates
       if (socket) {
         await sendMessage('new_reaction', {
           ...newReaction,
           channelId,
           conversationId,
+          messageId: channelId ? messageId : null,
+          directMessageId: conversationId ? messageId : null,
         })
       }
 
-      onReactionAdd(newReaction)
       setShowPicker(false)
-      
     } catch (error) {
       console.error('Error adding reaction:', error)
       toast.error('Failed to add reaction. Please try again.')
@@ -104,6 +109,9 @@ export function MessageReactions({
         throw new Error(error.error || 'Failed to remove reaction')
       }
 
+      // Call onReactionRemove before emitting socket event to ensure local state is updated first
+      onReactionRemove(reactionId)
+
       // Emit via socket for real-time updates
       if (socket) {
         await sendMessage('reaction_removed', {
@@ -113,10 +121,6 @@ export function MessageReactions({
           conversationId,
         })
       }
-
-      // Call onReactionRemove before emitting socket event to ensure local state is updated first
-      onReactionRemove(reactionId)
-      
     } catch (error) {
       console.error('Error removing reaction:', error)
       toast.error('Failed to remove reaction. Please try again.')
@@ -124,14 +128,20 @@ export function MessageReactions({
   }
 
   // Group reactions by emoji
-  const groupedReactions = reactions.reduce((acc, reaction) => {
-    const key = reaction.emoji
-    if (!acc[key]) {
-      acc[key] = []
-    }
-    acc[key].push(reaction)
-    return acc
-  }, {} as Record<string, Reaction[]>)
+  const groupedReactions = (Array.isArray(reactions) ? reactions : []).reduce(
+    (acc, reaction) => {
+      // Skip invalid reactions
+      if (!reaction?.emoji || typeof reaction.emoji !== 'string') return acc
+
+      const key = reaction.emoji
+      if (!acc[key]) {
+        acc[key] = []
+      }
+      acc[key].push(reaction)
+      return acc
+    },
+    {} as Record<string, Reaction[]>
+  )
 
   return (
     <div className="mt-1 flex flex-wrap items-center gap-1">
@@ -149,20 +159,22 @@ export function MessageReactions({
               }
             }}
             className={cn(
-              "flex items-center gap-1 rounded px-2 py-0.5 text-sm transition-colors",
-              hasUserReacted 
-                ? "bg-blue-600/40 hover:bg-blue-600/60" 
-                : "bg-gray-800 hover:bg-gray-700"
+              'flex items-center gap-1 rounded px-2 py-0.5 text-sm transition-colors',
+              hasUserReacted
+                ? 'bg-blue-600/40 hover:bg-blue-600/60'
+                : 'bg-gray-800 hover:bg-gray-700'
             )}
             aria-label={`${emoji} reaction (${reactions.length} ${reactions.length === 1 ? 'user' : 'users'})`}
             tabIndex={0}
             role="button"
           >
             <span>{emoji}</span>
-            <span className={cn(
-              "text-xs",
-              hasUserReacted ? "text-white" : "text-gray-400 group-hover:text-gray-300"
-            )}>
+            <span
+              className={cn(
+                'text-xs',
+                hasUserReacted ? 'text-white' : 'text-gray-400 group-hover:text-gray-300'
+              )}
+            >
               {reactions.length}
             </span>
           </button>
@@ -170,12 +182,13 @@ export function MessageReactions({
       })}
 
       <div className="relative">
-        <EmojiPicker 
+        <EmojiPicker
           onEmojiSelect={handleEmojiSelect}
           isOpen={showPicker}
           onOpenChange={setShowPicker}
+          variant="reaction"
         />
       </div>
     </div>
   )
-} 
+}

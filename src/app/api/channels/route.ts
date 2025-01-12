@@ -24,10 +24,7 @@ export async function POST(req: Request) {
     return NextResponse.json(channel)
   } catch (error) {
     console.error('Error creating channel:', error)
-    return NextResponse.json(
-      { error: 'Failed to create channel' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to create channel' }, { status: 500 })
   }
 }
 
@@ -50,9 +47,6 @@ export async function GET() {
     return NextResponse.json(channels)
   } catch (error) {
     console.error('Error fetching channels:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch channels' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to fetch channels' }, { status: 500 })
   }
-} 
+}

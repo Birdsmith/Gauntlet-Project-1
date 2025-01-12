@@ -3,6 +3,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: Request) {
   try {
     const session = await getServerSession(authOptions)
@@ -20,14 +22,11 @@ export async function GET(request: Request) {
     // Get all channels the user has access to
     const userChannels = await prisma.channel.findMany({
       where: {
-        OR: [
-          { isPrivate: false },
-          { createdById: session.user.id }
-        ]
+        OR: [{ isPrivate: false }, { createdById: session.user.id }],
       },
       select: {
-        id: true
-      }
+        id: true,
+      },
     })
 
     const channelIds = userChannels.map(channel => channel.id)
@@ -36,7 +35,7 @@ export async function GET(request: Request) {
     const messages = await prisma.message.findMany({
       where: {
         channelId: {
-          in: channelIds
+          in: channelIds,
         },
         content: {
           contains: query,
@@ -80,4 +79,4 @@ export async function GET(request: Request) {
     console.error('Error searching all channel messages:', error)
     return new NextResponse('Internal Server Error', { status: 500 })
   }
-} 
+}

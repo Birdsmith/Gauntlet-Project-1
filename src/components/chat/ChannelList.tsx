@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Hash, Volume2, ChevronDown, Settings, Plus } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
-import { useSocket } from '@/hooks/useSocket'
+import { useSocket } from '@/contexts/SocketContext'
+import { useSession } from 'next-auth/react'
 
 interface Channel {
   id: string
@@ -15,6 +16,7 @@ interface ChannelListProps {
 }
 
 export default function ChannelList({ selectedChannel, onSelectChannel }: ChannelListProps) {
+  const { data: session } = useSession()
   const [channels, setChannels] = useState<Channel[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
@@ -31,32 +33,38 @@ export default function ChannelList({ selectedChannel, onSelectChannel }: Channe
 
   useEffect(() => {
     async function fetchChannels() {
+      if (!session?.user) {
+        setChannels([])
+        setIsLoading(false)
+        return
+      }
+
       try {
         const response = await fetch('/api/channels')
+        if (!response.ok) throw new Error('Failed to fetch channels')
         const data = await response.json()
         setChannels(data)
       } catch (error) {
         console.error('Failed to fetch channels:', error)
+        setChannels([])
       } finally {
         setIsLoading(false)
       }
     }
 
     fetchChannels()
-  }, [])
+  }, [session])
 
   useEffect(() => {
     if (!socket) return
 
     const handleChannelDeleted = (deletedChannelId: string) => {
       console.log('Channel deleted:', deletedChannelId)
-      setChannels((prev) => prev.filter((channel) => channel.id !== deletedChannelId))
-      
+      setChannels(prev => prev.filter(channel => channel.id !== deletedChannelId))
+
       // If the deleted channel was selected, select another channel
       if (selectedChannel === deletedChannelId) {
-        const remainingChannels = channels.filter(
-          (channel) => channel.id !== deletedChannelId
-        )
+        const remainingChannels = channels.filter(channel => channel.id !== deletedChannelId)
         if (remainingChannels.length > 0) {
           onSelectChannel(remainingChannels[0].id)
         }
@@ -65,7 +73,13 @@ export default function ChannelList({ selectedChannel, onSelectChannel }: Channe
 
     const handleChannelCreated = (channel: Channel) => {
       console.log('Channel created:', channel)
-      setChannels((prev) => [...prev, channel])
+      // Only add the channel if it doesn't already exist
+      setChannels(prev => {
+        if (prev.some(c => c.id === channel.id)) {
+          return prev
+        }
+        return [...prev, channel]
+      })
     }
 
     socket.on('channel-created', handleChannelCreated)
@@ -104,10 +118,13 @@ export default function ChannelList({ selectedChannel, onSelectChannel }: Channe
       }
 
       const newChannel = await response.json()
-      
-      // Only emit the socket event, let the socket handler update the state
+
+      // Update local state first
+      setChannels(prev => [...prev, newChannel])
+
+      // Then emit the socket event
       socket.emit('channel-created', newChannel)
-      
+
       setIsCreateModalOpen(false)
       setNewChannelName('')
       setNewChannelDescription('')
@@ -145,10 +162,8 @@ export default function ChannelList({ selectedChannel, onSelectChannel }: Channe
       }
 
       const updatedChannel = await response.json()
-      setChannels((prev) =>
-        prev.map((channel) =>
-          channel.id === updatedChannel.id ? updatedChannel : channel
-        )
+      setChannels(prev =>
+        prev.map(channel => (channel.id === updatedChannel.id ? updatedChannel : channel))
       )
       setIsEditModalOpen(false)
       setSelectedChannelForEdit(null)
@@ -174,17 +189,15 @@ export default function ChannelList({ selectedChannel, onSelectChannel }: Channe
         const data = await response.json()
         throw new Error(data.error || 'Failed to delete channel')
       }
-      
-      setChannels((prev) =>
-        prev.filter((channel) => channel.id !== selectedChannelForEdit.id)
-      )
+
+      setChannels(prev => prev.filter(channel => channel.id !== selectedChannelForEdit.id))
       setIsDeleteModalOpen(false)
       setSelectedChannelForEdit(null)
 
       // If the deleted channel was selected, select another channel
       if (selectedChannel === selectedChannelForEdit.id) {
         const remainingChannels = channels.filter(
-          (channel) => channel.id !== selectedChannelForEdit.id
+          channel => channel.id !== selectedChannelForEdit.id
         )
         if (remainingChannels.length > 0) {
           onSelectChannel(remainingChannels[0].id)
@@ -239,11 +252,11 @@ export default function ChannelList({ selectedChannel, onSelectChannel }: Channe
       {/* Text Channels Section */}
       <div className="mb-2">
         <div className="flex items-center justify-between px-1 py-1.5">
-          <button 
+          <button
             onClick={toggleChannelList}
             className="flex items-center text-xs font-semibold uppercase text-gray-400 hover:text-gray-300"
           >
-            <ChevronDown 
+            <ChevronDown
               className={`mr-1 h-3 w-3 transform transition-transform duration-200 ${
                 isChannelListCollapsed ? '-rotate-90' : ''
               }`}
@@ -259,14 +272,13 @@ export default function ChannelList({ selectedChannel, onSelectChannel }: Channe
           </button>
         </div>
 
-        <div className={`mt-1 space-y-0.5 transition-all duration-200 ${
-          isChannelListCollapsed ? 'opacity-90' : ''
-        }`}>
-          {visibleChannels.map((channel) => (
-            <div
-              key={channel.id}
-              className="group relative flex items-center"
-            >
+        <div
+          className={`mt-1 space-y-0.5 transition-all duration-200 ${
+            isChannelListCollapsed ? 'opacity-90' : ''
+          }`}
+        >
+          {visibleChannels.map(channel => (
+            <div key={channel.id} className="group relative flex items-center">
               <button
                 onClick={() => onSelectChannel(channel.id)}
                 className={`flex w-full items-center rounded px-2 py-1 text-sm font-medium ${
@@ -280,7 +292,7 @@ export default function ChannelList({ selectedChannel, onSelectChannel }: Channe
               </button>
               <div className="absolute right-0 px-2">
                 <button
-                  onClick={(e) => {
+                  onClick={e => {
                     e.stopPropagation()
                     toggleSettingsMenu(channel.id)
                   }}
@@ -324,7 +336,7 @@ export default function ChannelList({ selectedChannel, onSelectChannel }: Channe
                 <input
                   type="text"
                   value={newChannelName}
-                  onChange={(e) => setNewChannelName(e.target.value)}
+                  onChange={e => setNewChannelName(e.target.value)}
                   className="mt-1 w-full rounded-md bg-gray-700 px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="new-channel"
                   required
@@ -337,15 +349,13 @@ export default function ChannelList({ selectedChannel, onSelectChannel }: Channe
                 <input
                   type="text"
                   value={newChannelDescription}
-                  onChange={(e) => setNewChannelDescription(e.target.value)}
+                  onChange={e => setNewChannelDescription(e.target.value)}
                   className="mt-1 w-full rounded-md bg-gray-700 px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Enter channel description"
                 />
               </div>
 
-              {error && (
-                <div className="text-sm text-red-500">{error}</div>
-              )}
+              {error && <div className="text-sm text-red-500">{error}</div>}
 
               <div className="flex justify-end space-x-3">
                 <button
@@ -385,7 +395,7 @@ export default function ChannelList({ selectedChannel, onSelectChannel }: Channe
                 <input
                   type="text"
                   value={newChannelName}
-                  onChange={(e) => setNewChannelName(e.target.value)}
+                  onChange={e => setNewChannelName(e.target.value)}
                   className="mt-1 w-full rounded-md bg-gray-700 px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="channel-name"
                   required
@@ -398,15 +408,13 @@ export default function ChannelList({ selectedChannel, onSelectChannel }: Channe
                 <input
                   type="text"
                   value={newChannelDescription}
-                  onChange={(e) => setNewChannelDescription(e.target.value)}
+                  onChange={e => setNewChannelDescription(e.target.value)}
                   className="mt-1 w-full rounded-md bg-gray-700 px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Enter channel description"
                 />
               </div>
 
-              {error && (
-                <div className="text-sm text-red-500">{error}</div>
-              )}
+              {error && <div className="text-sm text-red-500">{error}</div>}
 
               <div className="flex justify-end space-x-3">
                 <button
@@ -440,7 +448,9 @@ export default function ChannelList({ selectedChannel, onSelectChannel }: Channe
           <div className="w-full max-w-md rounded-lg bg-gray-800 p-6">
             <h2 className="mb-4 text-xl font-bold text-white">Delete Channel</h2>
             <p className="mb-6 text-gray-300">
-              Are you sure you want to delete <span className="font-semibold">#{selectedChannelForEdit?.name}</span>? This action cannot be undone.
+              Are you sure you want to delete{' '}
+              <span className="font-semibold">#{selectedChannelForEdit?.name}</span>? This action
+              cannot be undone.
             </p>
 
             <div className="flex justify-end space-x-3">
@@ -465,4 +475,4 @@ export default function ChannelList({ selectedChannel, onSelectChannel }: Channe
       )}
     </div>
   )
-} 
+}

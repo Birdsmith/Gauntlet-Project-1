@@ -15,9 +15,9 @@ export async function GET(req: Request) {
       where: {
         participants: {
           some: {
-            userId: session.user.id
-          }
-        }
+            userId: session.user.id,
+          },
+        },
       },
       include: {
         participants: {
@@ -27,26 +27,26 @@ export async function GET(req: Request) {
                 id: true,
                 name: true,
                 image: true,
-                isOnline: true
-              }
-            }
-          }
+                isOnline: true,
+              },
+            },
+          },
         },
         messages: {
           orderBy: {
-            createdAt: 'desc'
+            createdAt: 'desc',
           },
           take: 1,
           select: {
             id: true,
             content: true,
-            createdAt: true
-          }
-        }
+            createdAt: true,
+          },
+        },
       },
       orderBy: {
-        updatedAt: 'desc'
-      }
+        updatedAt: 'desc',
+      },
     })
 
     // Transform the data to match the expected format
@@ -58,17 +58,14 @@ export async function GET(req: Request) {
       return {
         id: conversation.id,
         participants: conversation.participants.map(p => p.user),
-        lastMessage: conversation.messages[0] || null
+        lastMessage: conversation.messages[0] || null,
       }
     })
 
     return NextResponse.json(transformedConversations)
   } catch (error) {
     console.error('Error fetching conversations:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch conversations' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to fetch conversations' }, { status: 500 })
   }
 }
 
@@ -89,22 +86,22 @@ export async function POST(req: Request) {
           {
             participants: {
               some: {
-                userId: session.user.id
-              }
-            }
+                userId: session.user.id,
+              },
+            },
           },
           {
             participants: {
               some: {
-                userId: userId
-              }
-            }
+                userId: userId,
+              },
+            },
           },
           {
-            isGroup: false
-          }
-        ]
-      }
+            isGroup: false,
+          },
+        ],
+      },
     })
 
     if (existingConversation) {
@@ -115,11 +112,8 @@ export async function POST(req: Request) {
     const conversation = await prisma.conversation.create({
       data: {
         participants: {
-          create: [
-            { userId: session.user.id },
-            { userId: userId }
-          ]
-        }
+          create: [{ userId: session.user.id }, { userId: userId }],
+        },
       },
       include: {
         participants: {
@@ -129,20 +123,17 @@ export async function POST(req: Request) {
                 id: true,
                 name: true,
                 image: true,
-                isOnline: true
-              }
-            }
-          }
-        }
-      }
+                isOnline: true,
+              },
+            },
+          },
+        },
+      },
     })
 
     return NextResponse.json(conversation)
   } catch (error) {
     console.error('Error creating conversation:', error)
-    return NextResponse.json(
-      { error: 'Failed to create conversation' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to create conversation' }, { status: 500 })
   }
-} 
+}

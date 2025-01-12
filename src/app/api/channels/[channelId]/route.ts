@@ -5,10 +5,7 @@ import prisma from '@/lib/prisma'
 import { unlink } from 'fs/promises'
 import path from 'path'
 
-export async function GET(
-  req: Request,
-  { params }: { params: { channelId: string } }
-) {
+export async function GET(req: Request, { params }: { params: { channelId: string } }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
@@ -35,17 +32,11 @@ export async function GET(
     return NextResponse.json(channel)
   } catch (error) {
     console.error('Error fetching channel:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch channel' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to fetch channel' }, { status: 500 })
   }
 }
 
-export async function PATCH(
-  req: Request,
-  { params }: { params: { channelId: string } }
-) {
+export async function PATCH(req: Request, { params }: { params: { channelId: string } }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
@@ -56,10 +47,7 @@ export async function PATCH(
 
     // Validate input
     if (!name?.trim()) {
-      return NextResponse.json(
-        { error: 'Channel name is required' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Channel name is required' }, { status: 400 })
     }
 
     // Check if channel exists
@@ -68,10 +56,7 @@ export async function PATCH(
     })
 
     if (!existingChannel) {
-      return NextResponse.json(
-        { error: 'Channel not found' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'Channel not found' }, { status: 404 })
     }
 
     // Update channel
@@ -93,17 +78,11 @@ export async function PATCH(
     return NextResponse.json(updatedChannel)
   } catch (error) {
     console.error('Error updating channel:', error)
-    return NextResponse.json(
-      { error: 'Failed to update channel' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to update channel' }, { status: 500 })
   }
 }
 
-export async function DELETE(
-  req: Request,
-  { params }: { params: { channelId: string } }
-) {
+export async function DELETE(req: Request, { params }: { params: { channelId: string } }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
@@ -116,17 +95,14 @@ export async function DELETE(
       include: {
         messages: {
           include: {
-            files: true
-          }
-        }
-      }
+            files: true,
+          },
+        },
+      },
     })
 
     if (!channel) {
-      return NextResponse.json(
-        { error: 'Channel not found' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'Channel not found' }, { status: 404 })
     }
 
     // Collect all file paths that need to be deleted
@@ -138,42 +114,40 @@ export async function DELETE(
       })
 
     // Start a transaction to ensure all database deletions succeed or none do
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async tx => {
       // 1. Delete all reactions in messages of this channel
       await tx.reaction.deleteMany({
         where: {
           message: {
-            channelId: params.channelId
-          }
-        }
+            channelId: params.channelId,
+          },
+        },
       })
 
       // 2. Delete all files associated with messages in this channel
       await tx.file.deleteMany({
         where: {
           message: {
-            channelId: params.channelId
-          }
-        }
+            channelId: params.channelId,
+          },
+        },
       })
 
       // 3. Delete all messages in the channel
       await tx.message.deleteMany({
-        where: { channelId: params.channelId }
+        where: { channelId: params.channelId },
       })
 
       // 4. Delete the channel itself
       await tx.channel.delete({
-        where: { id: params.channelId }
+        where: { id: params.channelId },
       })
     })
 
     // After successful database deletion, delete the physical files
     await Promise.allSettled(
-      filePaths.map(filePath => 
-        unlink(filePath).catch(err => 
-          console.error(`Failed to delete file ${filePath}:`, err)
-        )
+      filePaths.map(filePath =>
+        unlink(filePath).catch(err => console.error(`Failed to delete file ${filePath}:`, err))
       )
     )
 
@@ -186,9 +160,6 @@ export async function DELETE(
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error deleting channel:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete channel' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to delete channel' }, { status: 500 })
   }
-} 
+}

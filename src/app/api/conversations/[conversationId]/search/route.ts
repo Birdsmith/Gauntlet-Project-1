@@ -3,10 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
 
-export async function GET(
-  request: Request,
-  { params }: { params: { conversationId: string } }
-) {
+export async function GET(request: Request, { params }: { params: { conversationId: string } }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user) {
@@ -24,8 +21,8 @@ export async function GET(
     const participant = await prisma.conversationParticipant.findFirst({
       where: {
         conversationId: params.conversationId,
-        userId: session.user.id
-      }
+        userId: session.user.id,
+      },
     })
 
     if (!participant) {
@@ -72,4 +69,4 @@ export async function GET(
     console.error('Error searching direct messages:', error)
     return new NextResponse('Internal Server Error', { status: 500 })
   }
-} 
+}

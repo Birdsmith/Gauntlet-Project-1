@@ -6,10 +6,7 @@ import path from 'path'
 import { existsSync } from 'fs'
 import { mkdir, writeFile } from 'fs/promises'
 
-export async function GET(
-  request: Request,
-  { params }: { params: { messageId: string } }
-) {
+export async function GET(request: Request, { params }: { params: { messageId: string } }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user) {
@@ -22,8 +19,8 @@ export async function GET(
     const channelMessage = await prisma.message.findUnique({
       where: { id: messageId },
       include: {
-        channel: true
-      }
+        channel: true,
+      },
     })
 
     if (!channelMessage) {
@@ -37,10 +34,10 @@ export async function GET(
         OR: [
           { isPrivate: false },
           {
-            createdById: session.user.id
-          }
-        ]
-      }
+            createdById: session.user.id,
+          },
+        ],
+      },
     })
 
     if (!isMember) {
@@ -50,21 +47,21 @@ export async function GET(
     // Fetch replies for channel message
     const replies = await prisma.message.findMany({
       where: {
-        replyToId: messageId
+        replyToId: messageId,
       },
       include: {
         user: {
           select: {
             id: true,
             name: true,
-            image: true
-          }
+            image: true,
+          },
         },
-        files: true
+        files: true,
       },
       orderBy: {
-        createdAt: 'asc'
-      }
+        createdAt: 'asc',
+      },
     })
 
     return NextResponse.json(replies)
@@ -74,10 +71,7 @@ export async function GET(
   }
 }
 
-export async function POST(
-  request: Request,
-  { params }: { params: { messageId: string } }
-) {
+export async function POST(request: Request, { params }: { params: { messageId: string } }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user) {
@@ -92,7 +86,7 @@ export async function POST(
     const contentType = request.headers.get('content-type') || ''
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData()
-      content = formData.get('content') as string || ''
+      content = (formData.get('content') as string) || ''
       file = formData.get('file') as File
     } else {
       const json = await request.json()
@@ -107,8 +101,8 @@ export async function POST(
     const parentMessage = await prisma.message.findUnique({
       where: { id: messageId },
       include: {
-        channel: true
-      }
+        channel: true,
+      },
     })
 
     if (!parentMessage) {
@@ -122,10 +116,10 @@ export async function POST(
         OR: [
           { isPrivate: false },
           {
-            createdById: session.user.id
-          }
-        ]
-      }
+            createdById: session.user.id,
+          },
+        ],
+      },
     })
 
     if (!isMember) {
@@ -138,18 +132,18 @@ export async function POST(
         content: content.trim(),
         channelId: parentMessage.channelId,
         userId: session.user.id,
-        replyToId: messageId
+        replyToId: messageId,
       },
       include: {
         user: {
           select: {
             id: true,
             name: true,
-            image: true
-          }
+            image: true,
+          },
         },
-        files: true
-      }
+        files: true,
+      },
     })
 
     // Handle file upload if present
@@ -163,14 +157,14 @@ export async function POST(
         if (!existsSync(uploadDir)) {
           await mkdir(uploadDir, { recursive: true })
         }
-        
+
         // Generate unique filename
         const uniqueFilename = `${Date.now()}-${Math.random().toString(36).substr(2, 6)}${path.extname(file.name)}`
         const filePath = path.join(uploadDir, uniqueFilename)
-        
+
         // Save file
         await writeFile(filePath, buffer)
-        
+
         // Create file record in database
         await prisma.file.create({
           data: {
@@ -178,8 +172,8 @@ export async function POST(
             url: `/uploads/${uniqueFilename}`,
             size: buffer.length,
             type: file.type,
-            messageId: reply.id
-          }
+            messageId: reply.id,
+          },
         })
 
         // Fetch updated reply with file
@@ -190,11 +184,11 @@ export async function POST(
               select: {
                 id: true,
                 name: true,
-                image: true
-              }
+                image: true,
+              },
             },
-            files: true
-          }
+            files: true,
+          },
         })
 
         return NextResponse.json(updatedReply)
@@ -210,4 +204,4 @@ export async function POST(
     console.error('[MESSAGES_REPLIES_POST]', error)
     return new NextResponse('Internal Error', { status: 500 })
   }
-} 
+}

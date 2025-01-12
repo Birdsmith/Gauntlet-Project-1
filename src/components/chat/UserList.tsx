@@ -1,6 +1,6 @@
 import { useSession } from 'next-auth/react'
-import { useEffect, useState } from 'react'
-import { useSocket } from '@/hooks/useSocket'
+import { useEffect, useState, useCallback } from 'react'
+import { useSocket } from '@/contexts/SocketContext'
 import { Pencil } from 'lucide-react'
 
 interface User {
@@ -25,46 +25,49 @@ export default function UserList() {
   const [error, setError] = useState('')
   const { socket } = useSocket()
 
-  useEffect(() => {
-    async function fetchUsers() {
-      try {
-        const response = await fetch('/api/users')
-        if (!response.ok) throw new Error('Failed to fetch users')
-        const data = await response.json()
-        setUsers(data)
-      } catch (error) {
-        console.error('Error fetching users:', error)
-      } finally {
-        setIsLoading(false)
-      }
-    }
+  const fetchUsers = useCallback(async () => {
+    if (!session?.user) return
 
-    fetchUsers()
-  }, [])
+    try {
+      const response = await fetch('/api/users')
+      if (!response.ok) throw new Error('Failed to fetch users')
+      const data = await response.json()
+      setUsers(data)
+    } catch (error) {
+      console.error('Error fetching users:', error)
+      setUsers([])
+    } finally {
+      setIsLoading(false)
+    }
+  }, [session?.user])
+
+  useEffect(() => {
+    if (session?.user) {
+      fetchUsers()
+    } else {
+      setUsers([])
+    }
+  }, [session?.user, fetchUsers])
 
   useEffect(() => {
     if (!socket) return
 
     const handleUserStatus = ({ userId, isOnline }: UserStatus) => {
-      setUsers((prevUsers) =>
-        prevUsers.map((user) =>
-          user.id === userId ? { ...user, isOnline } : user
-        )
+      setUsers(prevUsers =>
+        prevUsers.map(user => (user.id === userId ? { ...user, isOnline } : user))
       )
     }
 
     const handleProfileUpdate = (updatedUser: User) => {
-      setUsers((prevUsers) =>
-        prevUsers.map((user) =>
-          user.id === updatedUser.id 
-            ? { ...updatedUser, isOnline: user.isOnline } 
-            : user
+      setUsers(prevUsers =>
+        prevUsers.map(user =>
+          user.id === updatedUser.id ? { ...updatedUser, isOnline: user.isOnline } : user
         )
       )
     }
 
     const handleNewUser = (newUser: User) => {
-      setUsers((prevUsers) => {
+      setUsers(prevUsers => {
         // Check if user already exists
         if (prevUsers.some(user => user.id === newUser.id)) {
           return prevUsers
@@ -114,13 +117,11 @@ export default function UserList() {
       }
 
       const updatedUser = await response.json()
-      
+
       // Update users list while preserving online status
-      setUsers((prev) =>
-        prev.map((user) =>
-          user.id === updatedUser.id 
-            ? { ...updatedUser, isOnline: user.isOnline }
-            : user
+      setUsers(prev =>
+        prev.map(user =>
+          user.id === updatedUser.id ? { ...updatedUser, isOnline: user.isOnline } : user
         )
       )
 
@@ -145,8 +146,8 @@ export default function UserList() {
     )
   }
 
-  const onlineUsers = users.filter((user) => user.isOnline)
-  const offlineUsers = users.filter((user) => !user.isOnline)
+  const onlineUsers = users.filter(user => user.isOnline)
+  const offlineUsers = users.filter(user => !user.isOnline)
 
   return (
     <div className="flex flex-col">
@@ -155,10 +156,10 @@ export default function UserList() {
       </h3>
 
       <div className="space-y-1">
-        {onlineUsers.map((user) => (
-          <UserItem 
-            key={user.id} 
-            user={user} 
+        {onlineUsers.map(user => (
+          <UserItem
+            key={user.id}
+            user={user}
             isCurrentUser={user.id === session?.user?.id}
             onEditProfile={() => {
               if (user.id === session?.user?.id) {
@@ -177,10 +178,10 @@ export default function UserList() {
             Offline — {offlineUsers.length}
           </h3>
           <div className="space-y-1">
-            {offlineUsers.map((user) => (
-              <UserItem 
-                key={user.id} 
-                user={user} 
+            {offlineUsers.map(user => (
+              <UserItem
+                key={user.id}
+                user={user}
                 isCurrentUser={user.id === session?.user?.id}
                 onEditProfile={() => {
                   if (user.id === session?.user?.id) {
@@ -208,7 +209,7 @@ export default function UserList() {
                 <input
                   type="text"
                   value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
+                  onChange={e => setNewName(e.target.value)}
                   className="mt-1 w-full rounded-md bg-gray-700 px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Your name"
                   required
@@ -221,14 +222,12 @@ export default function UserList() {
                 <input
                   type="file"
                   accept="image/*"
-                  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                  onChange={e => setSelectedFile(e.target.files?.[0] || null)}
                   className="mt-1 w-full rounded-md bg-gray-700 px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
-              {error && (
-                <div className="text-sm text-red-500">{error}</div>
-              )}
+              {error && <div className="text-sm text-red-500">{error}</div>}
 
               <div className="flex justify-end space-x-3">
                 <button
@@ -258,11 +257,11 @@ export default function UserList() {
   )
 }
 
-function UserItem({ 
-  user, 
+function UserItem({
+  user,
   isCurrentUser,
-  onEditProfile 
-}: { 
+  onEditProfile,
+}: {
   user: User
   isCurrentUser: boolean
   onEditProfile: () => void
@@ -289,9 +288,7 @@ function UserItem({
       <div className="flex flex-1 items-center justify-between">
         <span className="text-sm font-medium text-gray-300">
           {user.name}
-          {isCurrentUser && (
-            <span className="ml-1 text-xs text-gray-400">(you)</span>
-          )}
+          {isCurrentUser && <span className="ml-1 text-xs text-gray-400">(you)</span>}
         </span>
         {isCurrentUser && (
           <button
@@ -305,4 +302,4 @@ function UserItem({
       </div>
     </div>
   )
-} 
+}

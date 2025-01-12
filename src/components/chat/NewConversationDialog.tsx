@@ -21,10 +21,7 @@ interface NewConversationDialogProps {
   onClose: () => void
 }
 
-export default function NewConversationDialog({
-  isOpen,
-  onClose,
-}: NewConversationDialogProps) {
+export default function NewConversationDialog({ isOpen, onClose }: NewConversationDialogProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [users, setUsers] = useState<User[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -105,17 +102,13 @@ export default function NewConversationDialog({
               </div>
             ) : users.length === 0 ? (
               searchQuery ? (
-                <p className="py-8 text-center text-sm text-gray-400">
-                  No users found
-                </p>
+                <p className="py-8 text-center text-sm text-gray-400">No users found</p>
               ) : (
-                <p className="py-8 text-center text-sm text-gray-400">
-                  Type to search users
-                </p>
+                <p className="py-8 text-center text-sm text-gray-400">Type to search users</p>
               )
             ) : (
               <div className="space-y-2">
-                {users.map((user) => (
+                {users.map(user => (
                   <button
                     key={user.id}
                     className={cn(
@@ -145,9 +138,7 @@ export default function NewConversationDialog({
                         />
                       </div>
                       <div>
-                        <p className="font-medium text-white">
-                          {user.name || 'Unknown User'}
-                        </p>
+                        <p className="font-medium text-white">{user.name || 'Unknown User'}</p>
                         <p className="text-sm text-gray-400">
                           {user.isOnline ? 'Online' : 'Offline'}
                         </p>
@@ -162,4 +153,4 @@ export default function NewConversationDialog({
       </DialogContent>
     </Dialog>
   )
-} 
+}

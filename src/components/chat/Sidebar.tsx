@@ -33,12 +33,8 @@ export function Sidebar() {
       <div className="p-4">
         <h2 className="text-lg font-semibold mb-4">Channels</h2>
         <div className="space-y-1">
-          {channels.map((channel) => (
-            <Button
-              key={channel.id}
-              variant="ghost"
-              className="w-full justify-start"
-            >
+          {channels.map(channel => (
+            <Button key={channel.id} variant="ghost" className="w-full justify-start">
               <Hash className="h-4 w-4 mr-2" />
               {channel.name}
             </Button>
@@ -47,4 +43,4 @@ export function Sidebar() {
       </div>
     </div>
   )
-} 
+}

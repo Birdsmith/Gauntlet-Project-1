@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { X, Send, Plus } from 'lucide-react'
-import { useSocket } from '@/hooks/useSocket'
+import { useSocket } from '@/contexts/SocketContext'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/components/ui/use-toast'
 import { EmojiPicker } from './EmojiPicker'
@@ -64,19 +64,19 @@ const ALLOWED_FILE_TYPES = [
   'application/pdf',
   'text/plain',
   'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ]
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
 
-export function ThreadView({ 
-  parentMessage, 
-  isOpen, 
+export function ThreadView({
+  parentMessage,
+  isOpen,
   onClose,
   isDirectMessage,
   conversationId,
   channelId,
-  onParentUpdate
+  onParentUpdate,
 }: ThreadViewProps) {
   const { data: session } = useSession()
   const [replies, setReplies] = useState<Message[]>([])
@@ -84,10 +84,15 @@ export function ThreadView({
   const [isLoading, setIsLoading] = useState(true)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false)
   const { toast } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const { socket, isConnected } = useSocket()
+  const { socket, isConnected, connect, sendMessage } = useSocket()
+
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [])
 
   const handleEmojiSelect = (emoji: any) => {
     const input = document.querySelector('input[type="text"]') as HTMLInputElement
@@ -119,10 +124,10 @@ export function ThreadView({
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(false)
-    
+
     const files = Array.from(e.dataTransfer.files)
     const validFiles = files.filter(file => ALLOWED_FILE_TYPES.includes(file.type))
-    
+
     if (validFiles.length === 0) {
       toast({
         title: 'Error',
@@ -183,13 +188,13 @@ export function ThreadView({
     try {
       const formData = new FormData()
       formData.append('content', newReply.trim())
-      
+
       if (selectedFile) {
         formData.append('file', selectedFile)
       }
 
-      const endpoint = isDirectMessage 
-        ? `/api/conversations/${conversationId}/messages/${parentMessage.id}/replies` 
+      const endpoint = isDirectMessage
+        ? `/api/conversations/${conversationId}/messages/${parentMessage.id}/replies`
         : `/api/messages/${parentMessage.id}/replies`
 
       const response = await fetch(endpoint, {
@@ -198,7 +203,7 @@ export function ThreadView({
           ? { body: formData }
           : {
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ 
+              body: JSON.stringify({
                 content: newReply.trim(),
               }),
             }),
@@ -218,19 +223,27 @@ export function ThreadView({
         fileInputRef.current.value = ''
       }
 
+      // Update parent message reply count locally
+      if (onParentUpdate) {
+        onParentUpdate({
+          ...parentMessage,
+          replyCount: (parentMessage.replyCount || 0) + 1,
+        })
+      }
+
       // Emit through socket
       if (socket && isConnected) {
         if (isDirectMessage) {
           socket.emit('thread-reply', {
             ...reply,
             conversationId,
-            replyToId: parentMessage.id
+            replyToId: parentMessage.id,
           })
         } else {
           socket.emit('thread-reply', {
             ...reply,
             channelId,
-            replyToId: parentMessage.id
+            replyToId: parentMessage.id,
           })
         }
       }
@@ -248,21 +261,17 @@ export function ThreadView({
 
   useEffect(() => {
     async function fetchReplies() {
+      setIsLoading(true)
       try {
-        setIsLoading(true)
-        const endpoint = isDirectMessage
-          ? `/api/conversations/${conversationId}/messages/${parentMessage.id}/replies`
-          : `/api/messages/${parentMessage.id}/replies`
-
-        const response = await fetch(endpoint)
-        if (!response.ok) {
-          throw new Error('Failed to fetch replies')
-        }
-
+        const response = await fetch(
+          `/api/${isDirectMessage ? 'conversations' : 'channels'}/${
+            isDirectMessage ? conversationId : channelId
+          }/messages/${parentMessage.id}/replies`
+        )
+        if (!response.ok) throw new Error('Failed to fetch replies')
         const data = await response.json()
         setReplies(data)
       } catch (error) {
-        console.error('Failed to fetch replies:', error)
         toast({
           title: 'Error',
           description: 'Failed to load replies',
@@ -276,66 +285,40 @@ export function ThreadView({
     if (isOpen && session?.user?.id) {
       fetchReplies()
     }
-  }, [isOpen, parentMessage.id, session?.user?.id, conversationId, isDirectMessage])
+  }, [isOpen, parentMessage.id, session?.user?.id, conversationId, isDirectMessage, channelId, toast])
 
   // Socket event handlers for real-time updates
   useEffect(() => {
-    if (!socket || !isOpen) return
+    if (!socket || !isConnected || !parentMessage.id) return
 
-    // Join the thread room when opening the thread
-    socket.emit('join-thread', parentMessage.id)
-
-    const handleNewReply = (message: Message) => {
-      if (message.replyToId === parentMessage.id) {
-        setReplies(prev => {
-          if (prev.some(m => m.id === message.id)) return prev
-          return [...prev, message]
-        })
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-      }
+    // Join the thread room
+    const joinThread = () => {
+      socket.emit('join_thread', parentMessage.id)
     }
 
-    // Handle reactions
-    const handleNewReaction = (reaction: Reaction) => {
-      setReplies((prev) =>
-        prev.map((message) => {
-          if (message.id === reaction.messageId) {
-            return {
-              ...message,
-              reactions: [...(message.reactions || []), reaction],
-            }
-          }
-          return message
-        })
-      )
+    joinThread()
+    socket.on('connect', joinThread)
+
+    // Handle new replies
+    const handleReplyReceived = (reply: Message) => {
+      if (reply.replyToId !== parentMessage.id) return
+      if (reply.userId === session?.user?.id) return // Skip own replies
+
+      setReplies(prev => {
+        if (prev.some(r => r.id === reply.id)) return prev
+        return [...prev, reply]
+      })
+      scrollToBottom()
     }
 
-    const handleReactionRemoved = (data: { messageId: string; reactionId: string }) => {
-      setReplies((prev) =>
-        prev.map((message) => {
-          if (message.id === data.messageId) {
-            return {
-              ...message,
-              reactions: message.reactions.filter((r) => r.id !== data.reactionId),
-            }
-          }
-          return message
-        })
-      )
-    }
-
-    socket.on('thread-reply', handleNewReply)
-    socket.on('new-reaction', handleNewReaction)
-    socket.on('reaction-removed', handleReactionRemoved)
+    socket.on('message_received', handleReplyReceived)
 
     return () => {
-      // Leave the thread room when closing the thread
-      socket.emit('leave-thread', parentMessage.id)
-      socket.off('thread-reply', handleNewReply)
-      socket.off('new-reaction', handleNewReaction)
-      socket.off('reaction-removed', handleReactionRemoved)
+      socket.emit('leave_thread', parentMessage.id)
+      socket.off('connect', joinThread)
+      socket.off('message_received', handleReplyReceived)
     }
-  }, [socket, isOpen, parentMessage.id])
+  }, [socket, isConnected, parentMessage.id, session?.user?.id, scrollToBottom])
 
   if (!isOpen) return null
 
@@ -370,15 +353,13 @@ export function ThreadView({
           </div>
           <div>
             <div className="flex items-baseline space-x-2">
-              <span className="font-medium text-white">
-                {parentMessage.user.name}
-              </span>
+              <span className="font-medium text-white">{parentMessage.user.name}</span>
               <span className="text-xs text-gray-400">
                 {new Date(parentMessage.createdAt).toLocaleString()}
               </span>
             </div>
             <p className="text-gray-300">{parentMessage.content}</p>
-            {parentMessage.files?.map((file) => (
+            {parentMessage.files?.map(file => (
               <div key={file.id} className="mt-2">
                 {file.type.startsWith('image/') ? (
                   <div className="mt-2 max-w-sm">
@@ -414,7 +395,7 @@ export function ThreadView({
               channelId={channelId}
               conversationId={conversationId}
               reactions={parentMessage.reactions || []}
-              onReactionAdd={(reaction) => {
+              onReactionAdd={reaction => {
                 // Update parent message reactions in the parent component
                 if (onParentUpdate) {
                   onParentUpdate({
@@ -423,12 +404,12 @@ export function ThreadView({
                   })
                 }
               }}
-              onReactionRemove={(reactionId) => {
+              onReactionRemove={reactionId => {
                 // Update parent message reactions in the parent component
                 if (onParentUpdate) {
                   onParentUpdate({
                     ...parentMessage,
-                    reactions: parentMessage.reactions.filter((r) => r.id !== reactionId),
+                    reactions: parentMessage.reactions.filter(r => r.id !== reactionId),
                   })
                 }
               }}
@@ -449,7 +430,7 @@ export function ThreadView({
           </div>
         ) : (
           <div className="space-y-4">
-            {replies.map((reply) => (
+            {replies.map(reply => (
               <div key={reply.id} className="flex items-start space-x-3">
                 <div className="relative h-8 w-8 flex-shrink-0">
                   {reply.user.image ? (
@@ -466,15 +447,13 @@ export function ThreadView({
                 </div>
                 <div>
                   <div className="flex items-baseline space-x-2">
-                    <span className="font-medium text-white">
-                      {reply.user.name}
-                    </span>
+                    <span className="font-medium text-white">{reply.user.name}</span>
                     <span className="text-xs text-gray-400">
                       {new Date(reply.createdAt).toLocaleString()}
                     </span>
                   </div>
                   <p className="text-gray-300">{reply.content}</p>
-                  {reply.files?.map((file) => (
+                  {reply.files?.map(file => (
                     <div key={file.id} className="mt-2">
                       {file.type.startsWith('image/') ? (
                         <div className="mt-2 max-w-sm">
@@ -510,22 +489,22 @@ export function ThreadView({
                     channelId={channelId}
                     conversationId={conversationId}
                     reactions={reply.reactions || []}
-                    onReactionAdd={(reaction) =>
-                      setReplies((prev) =>
-                        prev.map((m) =>
+                    onReactionAdd={reaction =>
+                      setReplies(prev =>
+                        prev.map(m =>
                           m.id === reply.id
                             ? { ...m, reactions: [...(m.reactions || []), reaction] }
                             : m
                         )
                       )
                     }
-                    onReactionRemove={(reactionId) =>
-                      setReplies((prev) =>
-                        prev.map((m) =>
+                    onReactionRemove={reactionId =>
+                      setReplies(prev =>
+                        prev.map(m =>
                           m.id === reply.id
                             ? {
                                 ...m,
-                                reactions: m.reactions.filter((r) => r.id !== reactionId),
+                                reactions: m.reactions.filter(r => r.id !== reactionId),
                               }
                             : m
                         )
@@ -575,11 +554,16 @@ export function ThreadView({
             <input
               type="text"
               value={newReply}
-              onChange={(e) => setNewReply(e.target.value)}
+              onChange={e => setNewReply(e.target.value)}
               placeholder="Reply to thread..."
               className="flex-1 bg-transparent px-2 py-2 text-white placeholder-gray-400 focus:outline-none"
             />
-            <EmojiPicker onEmojiSelect={handleEmojiSelect} />
+            <EmojiPicker
+              onEmojiSelect={handleEmojiSelect}
+              isOpen={isEmojiPickerOpen}
+              onOpenChange={setIsEmojiPickerOpen}
+              variant="thread"
+            />
             <input
               type="file"
               ref={fileInputRef}
@@ -599,4 +583,4 @@ export function ThreadView({
       </div>
     </div>
   )
-} 
+}

@@ -71,10 +71,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
   } catch (error) {
     console.error('Error creating reaction:', error)
-    return NextResponse.json(
-      { error: 'Failed to create reaction' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to create reaction' }, { status: 500 })
   }
 }
 
@@ -87,7 +84,7 @@ export async function DELETE(req: Request) {
 
     const { searchParams } = new URL(req.url)
     const reactionId = searchParams.get('reactionId')
-    
+
     if (!reactionId) {
       return NextResponse.json({ error: 'Reaction ID is required' }, { status: 400 })
     }
@@ -102,9 +99,6 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error deleting reaction:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete reaction' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to delete reaction' }, { status: 500 })
   }
-} 
+}

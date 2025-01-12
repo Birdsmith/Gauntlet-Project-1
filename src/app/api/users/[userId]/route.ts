@@ -5,10 +5,7 @@ import prisma from '@/lib/prisma'
 import { writeFile, unlink } from 'fs/promises'
 import path from 'path'
 
-export async function PATCH(
-  req: Request,
-  { params }: { params: { userId: string } }
-) {
+export async function PATCH(req: Request, { params }: { params: { userId: string } }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
@@ -26,16 +23,13 @@ export async function PATCH(
 
     // Validate input
     if (!name?.trim()) {
-      return NextResponse.json(
-        { error: 'Name is required' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Name is required' }, { status: 400 })
     }
 
     // Get current user to check if we need to delete old image
     const currentUser = await prisma.user.findUnique({
       where: { id: params.userId },
-      select: { image: true }
+      select: { image: true },
     })
 
     let imagePath: string | null = null
@@ -54,14 +48,18 @@ export async function PATCH(
       const filename = `${params.userId}-${Date.now()}.${ext}`
       const arrayBuffer = await imageFile.arrayBuffer()
       const buffer = Buffer.from(arrayBuffer)
-      
+
       // Save the file
       await writeFile(path.join(uploadsDir, filename), buffer)
       imagePath = `/uploads/${filename}`
 
       // Delete old image if it exists
       if (currentUser?.image) {
-        const oldImagePath = path.join(process.cwd(), 'public', currentUser.image.replace(/^\//, ''))
+        const oldImagePath = path.join(
+          process.cwd(),
+          'public',
+          currentUser.image.replace(/^\//, '')
+        )
         try {
           await unlink(oldImagePath)
         } catch (error) {
@@ -86,9 +84,6 @@ export async function PATCH(
     return NextResponse.json(updatedUser)
   } catch (error) {
     console.error('Error updating user:', error)
-    return NextResponse.json(
-      { error: 'Failed to update user' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to update user' }, { status: 500 })
   }
-} 
+}

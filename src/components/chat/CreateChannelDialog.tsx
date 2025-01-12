@@ -45,17 +45,14 @@ export function CreateChannelDialog({ open, onOpenChange }: CreateChannelDialogP
 
           <form onSubmit={handleSubmit} className="mt-4 space-y-4">
             <div className="space-y-2">
-              <label
-                htmlFor="name"
-                className="text-sm font-medium text-gray-900 dark:text-white"
-              >
+              <label htmlFor="name" className="text-sm font-medium text-gray-900 dark:text-white">
                 Channel Name
               </label>
               <input
                 id="name"
                 type="text"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={e => setName(e.target.value)}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder:text-gray-400"
                 placeholder="e.g. general"
                 required
@@ -73,7 +70,7 @@ export function CreateChannelDialog({ open, onOpenChange }: CreateChannelDialogP
                 id="description"
                 type="text"
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={e => setDescription(e.target.value)}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder:text-gray-400"
                 placeholder="What's this channel about?"
               />
@@ -84,7 +81,7 @@ export function CreateChannelDialog({ open, onOpenChange }: CreateChannelDialogP
                 id="private"
                 type="checkbox"
                 checked={isPrivate}
-                onChange={(e) => setIsPrivate(e.target.checked)}
+                onChange={e => setIsPrivate(e.target.checked)}
                 className="h-4 w-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500 dark:border-gray-600"
               />
               <label
@@ -125,4 +122,4 @@ export function CreateChannelDialog({ open, onOpenChange }: CreateChannelDialogP
       </Dialog.Portal>
     </Dialog.Root>
   )
-} 
+}

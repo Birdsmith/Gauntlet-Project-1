@@ -23,4 +23,4 @@ export function getIO() {
     throw new Error('Socket.IO has not been initialized')
   }
   return io
-} 
+}

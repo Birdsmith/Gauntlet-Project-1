@@ -3,6 +3,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(req: Request) {
   try {
     const session = await getServerSession(authOptions)
@@ -41,9 +43,6 @@ export async function GET(req: Request) {
     return NextResponse.json(users)
   } catch (error) {
     console.error('Error searching users:', error)
-    return NextResponse.json(
-      { error: 'Failed to search users' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to search users' }, { status: 500 })
   }
-} 
+}

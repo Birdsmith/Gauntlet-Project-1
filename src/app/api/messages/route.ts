@@ -13,7 +13,7 @@ const ALLOWED_FILE_TYPES = [
   'application/pdf',
   'text/plain',
   'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ]
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
@@ -31,10 +31,7 @@ export async function POST(req: Request) {
     const file = formData.get('file') as File | null
 
     if (!content?.trim() && !file) {
-      return NextResponse.json(
-        { error: 'Message content or file is required' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Message content or file is required' }, { status: 400 })
     }
 
     let uploadedFilename: string | undefined
@@ -42,18 +39,12 @@ export async function POST(req: Request) {
     if (file) {
       // Validate file type
       if (!ALLOWED_FILE_TYPES.includes(file.type)) {
-        return NextResponse.json(
-          { error: 'File type not allowed' },
-          { status: 400 }
-        )
+        return NextResponse.json({ error: 'File type not allowed' }, { status: 400 })
       }
 
       // Validate file size
       if (file.size > MAX_FILE_SIZE) {
-        return NextResponse.json(
-          { error: 'File size exceeds 5MB limit' },
-          { status: 400 }
-        )
+        return NextResponse.json({ error: 'File size exceeds 5MB limit' }, { status: 400 })
       }
 
       // Create uploads directory if it doesn't exist
@@ -68,15 +59,12 @@ export async function POST(req: Request) {
         uploadedFilename = `${Date.now()}-${Math.random().toString(36).substring(7)}.${ext}`
         const arrayBuffer = await file.arrayBuffer()
         const buffer = Buffer.from(arrayBuffer)
-        
+
         // Save the file
         await writeFile(path.join(uploadsDir, uploadedFilename), buffer)
       } catch (error) {
         console.error('Error handling file upload:', error)
-        return NextResponse.json(
-          { error: 'Failed to upload file' },
-          { status: 500 }
-        )
+        return NextResponse.json({ error: 'Failed to upload file' }, { status: 500 })
       }
     }
 
@@ -92,8 +80,8 @@ export async function POST(req: Request) {
               size: file!.size,
               type: file!.type,
               url: `/uploads/${uploadedFilename}`,
-            }
-          }
+            },
+          },
         }),
       },
       include: {
@@ -111,10 +99,7 @@ export async function POST(req: Request) {
     return NextResponse.json(message)
   } catch (error) {
     console.error('Error creating message:', error)
-    return NextResponse.json(
-      { error: 'Failed to create message' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to create message' }, { status: 500 })
   }
 }
 
@@ -129,16 +114,13 @@ export async function GET(req: Request) {
     const channelId = searchParams.get('channelId')
 
     if (!channelId) {
-      return NextResponse.json(
-        { error: 'Channel ID is required' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Channel ID is required' }, { status: 400 })
     }
 
     const messages = await prisma.message.findMany({
-      where: { 
+      where: {
         channelId,
-        replyToId: null // Only fetch top-level messages, not replies
+        replyToId: null, // Only fetch top-level messages, not replies
       },
       orderBy: { createdAt: 'asc' },
       include: {
@@ -179,9 +161,6 @@ export async function GET(req: Request) {
     return NextResponse.json(transformedMessages)
   } catch (error) {
     console.error('Error fetching messages:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch messages' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 })
   }
-} 
+}

@@ -8,7 +8,11 @@ interface SearchBarProps {
   showAllChannelsToggle?: boolean
 }
 
-export function SearchBar({ onSearch, placeholder = "Search messages...", showAllChannelsToggle = false }: SearchBarProps) {
+export function SearchBar({
+  onSearch,
+  placeholder = 'Search messages...',
+  showAllChannelsToggle = false,
+}: SearchBarProps) {
   const [query, setQuery] = useState('')
   const [searchAllChannels, setSearchAllChannels] = useState(false)
   const [lastSearchQuery, setLastSearchQuery] = useState('')
@@ -37,7 +41,7 @@ export function SearchBar({ onSearch, placeholder = "Search messages...", showAl
         searchResults.current = Array.isArray(results) ? results : [results]
         setCurrentResultIndex(0)
         setLastSearchQuery(query)
-        
+
         if (searchResults.current.length > 0) {
           scrollToMessage(searchResults.current[0])
         }
@@ -67,7 +71,7 @@ export function SearchBar({ onSearch, placeholder = "Search messages...", showAl
           ref={inputRef}
           type="text"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={e => setQuery(e.target.value)}
           placeholder={placeholder}
           className="h-8 w-80 rounded-md bg-gray-800 pl-8 pr-4 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
@@ -77,7 +81,7 @@ export function SearchBar({ onSearch, placeholder = "Search messages...", showAl
           <input
             type="checkbox"
             checked={searchAllChannels}
-            onChange={(e) => setSearchAllChannels(e.target.checked)}
+            onChange={e => setSearchAllChannels(e.target.checked)}
             className="h-4 w-4 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-900"
           />
           Search all channels
@@ -85,4 +89,4 @@ export function SearchBar({ onSearch, placeholder = "Search messages...", showAl
       )}
     </form>
   )
-} 
+}

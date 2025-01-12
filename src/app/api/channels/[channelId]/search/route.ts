@@ -3,10 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
 
-export async function GET(
-  request: Request,
-  { params }: { params: { channelId: string } }
-) {
+export async function GET(request: Request, { params }: { params: { channelId: string } }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user) {
@@ -24,11 +21,8 @@ export async function GET(
     const channel = await prisma.channel.findFirst({
       where: {
         id: params.channelId,
-        OR: [
-          { isPrivate: false },
-          { createdById: session.user.id }
-        ]
-      }
+        OR: [{ isPrivate: false }, { createdById: session.user.id }],
+      },
     })
 
     if (!channel) {
@@ -75,4 +69,4 @@ export async function GET(
     console.error('Error searching channel messages:', error)
     return new NextResponse('Internal Server Error', { status: 500 })
   }
-} 
+}

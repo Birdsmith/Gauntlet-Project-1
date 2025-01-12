@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client'
 import { exit } from 'process'
 
 const prisma = new PrismaClient({
-  log: ['error', 'warn']
+  log: ['error', 'warn'],
 })
 
 const main = async (): Promise<void> => {
@@ -47,4 +47,4 @@ const main = async (): Promise<void> => {
   }
 }
 
-main() 
+main()

@@ -4,27 +4,29 @@ import { Inter } from 'next/font/google'
 import { getServerSession } from 'next-auth'
 import { SessionProvider } from '@/components/SessionProvider'
 import { Toaster } from '@/components/ui/toaster'
+import { SocketProvider } from '@/contexts/SocketContext'
 
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Chat App',
-  description: 'A real-time chat application',
+  title: 'ChatGenius',
+  description: 'A modern chat application',
+  icons: {
+    icon: '/next.svg',
+  },
 }
 
-export default async function RootLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const session = await getServerSession()
 
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <SessionProvider session={session}>
-          {children}
-          <Toaster />
+          <SocketProvider>
+            <Toaster />
+            {children}
+          </SocketProvider>
         </SessionProvider>
       </body>
     </html>

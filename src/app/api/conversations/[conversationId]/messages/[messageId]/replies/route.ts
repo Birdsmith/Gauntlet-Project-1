@@ -56,10 +56,7 @@ export async function GET(
     return NextResponse.json(replies)
   } catch (error) {
     console.error('[DIRECT_MESSAGES_REPLIES_GET]', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch replies' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to fetch replies' }, { status: 500 })
   }
 }
 
@@ -81,7 +78,7 @@ export async function POST(
     const contentType = request.headers.get('content-type') || ''
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData()
-      content = formData.get('content') as string || ''
+      content = (formData.get('content') as string) || ''
       file = formData.get('file') as File
     } else {
       const json = await request.json()
@@ -89,10 +86,7 @@ export async function POST(
     }
 
     if (!content?.trim() && !file) {
-      return NextResponse.json(
-        { error: 'Content or file is required' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Content or file is required' }, { status: 400 })
     }
 
     // Check if user is a participant in the conversation
@@ -185,9 +179,6 @@ export async function POST(
     return NextResponse.json(reply)
   } catch (error) {
     console.error('[DIRECT_MESSAGES_REPLIES_POST]', error)
-    return NextResponse.json(
-      { error: 'Failed to create reply' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to create reply' }, { status: 500 })
   }
-} 
+}

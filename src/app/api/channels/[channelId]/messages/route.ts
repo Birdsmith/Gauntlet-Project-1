@@ -3,10 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
 
-export async function GET(
-  req: Request,
-  { params }: { params: { channelId: string } }
-) {
+export async function GET(req: Request, { params }: { params: { channelId: string } }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
@@ -16,6 +13,7 @@ export async function GET(
     const messages = await prisma.message.findMany({
       where: {
         channelId: params.channelId,
+        replyToId: null, // Only fetch top-level messages
       },
       include: {
         user: {
@@ -26,6 +24,11 @@ export async function GET(
           },
         },
         files: true,
+        replies: {
+          select: {
+            id: true,
+          },
+        },
         reactions: {
           include: {
             user: {
@@ -43,20 +46,21 @@ export async function GET(
       },
     })
 
-    return NextResponse.json(messages)
+    // Transform messages to include reply count
+    const transformedMessages = messages.map(message => ({
+      ...message,
+      replyCount: message.replies.length,
+      replies: undefined, // Remove the replies array from the response
+    }))
+
+    return NextResponse.json(transformedMessages)
   } catch (error) {
     console.error('Error fetching messages:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch messages' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 })
   }
 }
 
-export async function POST(
-  req: Request,
-  { params }: { params: { channelId: string } }
-) {
+export async function POST(req: Request, { params }: { params: { channelId: string } }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
@@ -67,10 +71,7 @@ export async function POST(
 
     // Validate input
     if (!content && !file) {
-      return NextResponse.json(
-        { error: 'Message content or file is required' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Message content or file is required' }, { status: 400 })
     }
 
     // Check if channel exists
@@ -79,10 +80,7 @@ export async function POST(
     })
 
     if (!channel) {
-      return NextResponse.json(
-        { error: 'Channel not found' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'Channel not found' }, { status: 404 })
     }
 
     // Create message with optional file
@@ -118,9 +116,6 @@ export async function POST(
     return NextResponse.json(message)
   } catch (error) {
     console.error('Error creating message:', error)
-    return NextResponse.json(
-      { error: 'Failed to create message' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to create message' }, { status: 500 })
   }
-} 
+}

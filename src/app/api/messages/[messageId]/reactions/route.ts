@@ -4,10 +4,7 @@ import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
 
 // Add a reaction to a message
-export async function POST(
-  req: Request,
-  { params }: { params: { messageId: string } }
-) {
+export async function POST(req: Request, { params }: { params: { messageId: string } }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
@@ -21,7 +18,7 @@ export async function POST(
 
     const message = await prisma.message.findUnique({
       where: { id: params.messageId },
-      include: { channel: true }
+      include: { channel: true },
     })
 
     if (!message) {
@@ -55,18 +52,12 @@ export async function POST(
       )
     }
     console.error('Error adding reaction:', error)
-    return NextResponse.json(
-      { error: 'Failed to add reaction' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to add reaction' }, { status: 500 })
   }
 }
 
 // Remove a reaction from a message
-export async function DELETE(
-  req: Request,
-  { params }: { params: { messageId: string } }
-) {
+export async function DELETE(req: Request, { params }: { params: { messageId: string } }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
@@ -82,7 +73,7 @@ export async function DELETE(
 
     const message = await prisma.message.findUnique({
       where: { id: params.messageId },
-      include: { channel: true }
+      include: { channel: true },
     })
 
     if (!message) {
@@ -101,9 +92,6 @@ export async function DELETE(
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error removing reaction:', error)
-    return NextResponse.json(
-      { error: 'Failed to remove reaction' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to remove reaction' }, { status: 500 })
   }
-} 
+}

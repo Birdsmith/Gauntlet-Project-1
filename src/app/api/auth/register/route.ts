@@ -9,10 +9,7 @@ export async function POST(req: Request) {
 
     // Validate input
     if (!name || !email || !password) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
     // Validate username length
@@ -26,7 +23,10 @@ export async function POST(req: Request) {
     // Validate username format (letters, numbers, spaces, and common name characters)
     if (!/^[a-zA-Z0-9\s\-.']+$/.test(name)) {
       return NextResponse.json(
-        { error: 'Username can only contain letters, numbers, spaces, hyphens, apostrophes, and periods' },
+        {
+          error:
+            'Username can only contain letters, numbers, spaces, hyphens, apostrophes, and periods',
+        },
         { status: 400 }
       )
     }
@@ -42,10 +42,7 @@ export async function POST(req: Request) {
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!emailRegex.test(email)) {
-      return NextResponse.json(
-        { error: 'Invalid email format' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Invalid email format' }, { status: 400 })
     }
 
     // Validate password strength
@@ -59,25 +56,16 @@ export async function POST(req: Request) {
     // Check if user already exists
     const existingUser = await prisma.user.findFirst({
       where: {
-        OR: [
-          { email },
-          { name },
-        ],
+        OR: [{ email }, { name }],
       },
     })
 
     if (existingUser) {
       if (existingUser.email === email) {
-        return NextResponse.json(
-          { error: 'Email already registered' },
-          { status: 400 }
-        )
+        return NextResponse.json({ error: 'Email already registered' }, { status: 400 })
       }
       if (existingUser.name === name) {
-        return NextResponse.json(
-          { error: 'Username already taken' },
-          { status: 400 }
-        )
+        return NextResponse.json({ error: 'Username already taken' }, { status: 400 })
       }
     }
 
@@ -107,10 +95,7 @@ export async function POST(req: Request) {
       console.warn('Socket.IO not initialized:', socketError)
     }
 
-    return NextResponse.json(
-      { message: 'User created successfully' },
-      { status: 201 }
-    )
+    return NextResponse.json({ message: 'User created successfully' }, { status: 201 })
   } catch (error) {
     console.error('Registration error:', error)
     return NextResponse.json(
@@ -118,4 +103,4 @@ export async function POST(req: Request) {
       { status: 500 }
     )
   }
-} 
+}

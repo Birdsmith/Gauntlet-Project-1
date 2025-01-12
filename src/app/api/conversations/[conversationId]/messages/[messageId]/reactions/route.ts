@@ -20,7 +20,7 @@ export async function POST(
 
     const message = await prisma.directMessage.findUnique({
       where: { id: params.messageId },
-      include: { conversation: true }
+      include: { conversation: true },
     })
 
     if (!message) {
@@ -28,7 +28,10 @@ export async function POST(
     }
 
     if (message.conversationId !== params.conversationId) {
-      return NextResponse.json({ error: 'Message does not belong to this conversation' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'Message does not belong to this conversation' },
+        { status: 400 }
+      )
     }
 
     // Create the reaction with directMessageId instead of messageId
@@ -58,10 +61,7 @@ export async function POST(
       )
     }
     console.error('Error adding reaction:', error)
-    return NextResponse.json(
-      { error: 'Failed to add reaction' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to add reaction' }, { status: 500 })
   }
 }
 
@@ -84,7 +84,7 @@ export async function DELETE(
 
     const message = await prisma.directMessage.findUnique({
       where: { id: params.messageId },
-      include: { conversation: true }
+      include: { conversation: true },
     })
 
     if (!message) {
@@ -92,7 +92,10 @@ export async function DELETE(
     }
 
     if (message.conversationId !== params.conversationId) {
-      return NextResponse.json({ error: 'Message does not belong to this conversation' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'Message does not belong to this conversation' },
+        { status: 400 }
+      )
     }
 
     // Delete the reaction using directMessageId instead of messageId
@@ -107,9 +110,6 @@ export async function DELETE(
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error removing reaction:', error)
-    return NextResponse.json(
-      { error: 'Failed to remove reaction' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to remove reaction' }, { status: 500 })
   }
-} 
+}
