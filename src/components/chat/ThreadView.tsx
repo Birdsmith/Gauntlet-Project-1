@@ -264,9 +264,9 @@ export function ThreadView({
       setIsLoading(true)
       try {
         const response = await fetch(
-          `/api/${isDirectMessage ? 'conversations' : 'channels'}/${
-            isDirectMessage ? conversationId : channelId
-          }/messages/${parentMessage.id}/replies`
+          isDirectMessage
+            ? `/api/conversations/${conversationId}/messages/${parentMessage.id}/replies`
+            : `/api/messages/${parentMessage.id}/replies`
         )
         if (!response.ok) throw new Error('Failed to fetch replies')
         const data = await response.json()
@@ -285,40 +285,77 @@ export function ThreadView({
     if (isOpen && session?.user?.id) {
       fetchReplies()
     }
-  }, [isOpen, parentMessage.id, session?.user?.id, conversationId, isDirectMessage, channelId, toast])
+  }, [isOpen, parentMessage.id, session?.user?.id, conversationId, isDirectMessage, toast])
 
   // Socket event handlers for real-time updates
   useEffect(() => {
-    if (!socket || !isConnected || !parentMessage.id) return
+    if (!socket || !isConnected || !parentMessage.id) return;
 
     // Join the thread room
     const joinThread = () => {
-      socket.emit('join_thread', parentMessage.id)
-    }
+      socket.emit('join_thread', parentMessage.id);
+    };
 
-    joinThread()
-    socket.on('connect', joinThread)
+    joinThread();
+    socket.on('connect', joinThread);
 
     // Handle new replies
     const handleReplyReceived = (reply: Message) => {
-      if (reply.replyToId !== parentMessage.id) return
-      if (reply.userId === session?.user?.id) return // Skip own replies
+      if (reply.replyToId !== parentMessage.id) return;
+      if (reply.userId === session?.user?.id) return; // Skip own replies
 
       setReplies(prev => {
-        if (prev.some(r => r.id === reply.id)) return prev
-        return [...prev, reply]
-      })
-      scrollToBottom()
-    }
+        // Check if we already have this reply
+        if (prev.some(r => r.id === reply.id)) return prev;
+        const newReplies = [...prev, reply];
+        // Sort by creation date
+        return newReplies.sort((a, b) => 
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        );
+      });
+      scrollToBottom();
+    };
 
-    socket.on('message_received', handleReplyReceived)
+    // Handle thread-reply event specifically for thread replies
+    const handleThreadReply = (reply: Message) => {
+      if (reply.replyToId !== parentMessage.id) return;
+      
+      setReplies(prev => {
+        // Check if we already have this reply
+        if (prev.some(r => r.id === reply.id)) return prev;
+        const newReplies = [...prev, reply];
+        // Sort by creation date
+        return newReplies.sort((a, b) => 
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        );
+      });
+      scrollToBottom();
+    };
+
+    // Handle reply count updates
+    const handleReplyCountUpdate = (update: { messageId: string; replyCount: number }) => {
+      if (update.messageId !== parentMessage.id) return;
+      
+      if (onParentUpdate) {
+        onParentUpdate({
+          ...parentMessage,
+          replyCount: update.replyCount
+        });
+      }
+    };
+
+    socket.on('message_received', handleReplyReceived);
+    socket.on('thread-reply', handleThreadReply);
+    socket.on('thread-reply-count-update', handleReplyCountUpdate);
 
     return () => {
-      socket.emit('leave_thread', parentMessage.id)
-      socket.off('connect', joinThread)
-      socket.off('message_received', handleReplyReceived)
-    }
-  }, [socket, isConnected, parentMessage.id, session?.user?.id, scrollToBottom])
+      socket.emit('leave_thread', parentMessage.id);
+      socket.off('connect', joinThread);
+      socket.off('message_received', handleReplyReceived);
+      socket.off('thread-reply', handleThreadReply);
+      socket.off('thread-reply-count-update', handleReplyCountUpdate);
+    };
+  }, [socket, isConnected, parentMessage.id, parentMessage, session?.user?.id, scrollToBottom, onParentUpdate]);
 
   if (!isOpen) return null
 

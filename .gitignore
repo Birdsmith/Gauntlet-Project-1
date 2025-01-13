@@ -43,3 +43,6 @@ next-env.d.ts
 # IDE
 .vscode/
 .idea/
+
+# uploads
+/public/uploads/

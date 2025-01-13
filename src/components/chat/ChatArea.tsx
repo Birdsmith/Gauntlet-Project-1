@@ -66,7 +66,12 @@ function messageReducer(state: ChannelMessage[], action: MessageAction): Channel
       )
     case 'UPDATE_REPLY_COUNT':
       return state.map(m =>
-        m.id === action.messageId ? { ...m, replyCount: action.replyCount } : m
+        m.id === action.messageId
+          ? {
+              ...m,
+              replyCount: action.replyCount,
+            }
+          : m
       )
     default:
       return state
@@ -315,10 +320,21 @@ export default function ChatArea({ channelId }: ChatAreaProps) {
     }
   }, [])
 
-  const handleEmojiSelect = useCallback((emoji: string) => {
-    setNewMessage(prev => prev + emoji)
-    setIsEmojiPickerOpen(false)
-  }, [])
+  const handleEmojiSelect = useCallback((emoji: any) => {
+    const input = document.querySelector('input[type="text"]') as HTMLInputElement
+    if (!input) return
+
+    const start = input.selectionStart || 0
+    const end = input.selectionEnd || 0
+    const updatedMessage = newMessage.slice(0, start) + emoji.native + newMessage.slice(end)
+    setNewMessage(updatedMessage)
+
+    // Set cursor position after emoji
+    setTimeout(() => {
+      input.setSelectionRange(start + emoji.native.length, start + emoji.native.length)
+      input.focus()
+    }, 0)
+  }, [newMessage])
 
   // Memoize the input handler to prevent recreation on every render
   const handleMessageChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {

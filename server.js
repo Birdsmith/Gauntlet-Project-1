@@ -1,7 +1,20 @@
 const { createServer } = require('http')
 const { Server } = require('socket.io')
 const { PrismaClient } = require('@prisma/client')
-require('dotenv').config()
+const path = require('path')
+const fs = require('fs')
+
+// Load environment variables based on NODE_ENV
+const NODE_ENV = process.env.NODE_ENV || 'development'
+const envFile = NODE_ENV === 'production' ? '.env.production' : '.env.development'
+const envPath = path.resolve(process.cwd(), envFile)
+
+if (fs.existsSync(envPath)) {
+  require('dotenv').config({ path: envPath })
+} else {
+  console.error(`Environment file ${envFile} not found!`)
+  process.exit(1)
+}
 
 const port = process.env.SOCKET_PORT || 3001
 const clientUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
@@ -103,27 +116,63 @@ io.on('connection', async socket => {
   })
 
   // Handle thread replies
-  socket.on('thread-reply', data => {
-    console.log('Received thread reply:', data)
-    socket.to(`thread:${data.replyToId}`).emit('thread-reply', data)
+  socket.on('thread-reply', async data => {
+    try {
+      // First emit the reply to all clients immediately
+      if (data.channelId) {
+        io.to(`channel:${data.channelId}`).emit('thread-reply', data)
+        io.to(`thread:${data.replyToId}`).emit('thread-reply', data)
+      } else if (data.conversationId) {
+        io.to(`conversation:${data.conversationId}`).emit('thread-reply', data)
+        io.to(`thread:${data.replyToId}`).emit('thread-reply', data)
+      }
 
-    const replyCountUpdate = {
-      messageId: data.replyToId,
-      replyCount: 1,
-    }
+      // Then try to update reply counts
+      try {
+        let replyCount = 0;
+        if (data.channelId) {
+          replyCount = await prisma.message.count({
+            where: { replyToId: data.replyToId }
+          });
+        } else if (data.conversationId) {
+          replyCount = await prisma.directMessage.count({
+            where: { replyToId: data.replyToId }
+          });
+        }
 
-    if (data.channelId) {
-      socket.to(`channel:${data.channelId}`).emit('thread-reply-count-update', {
-        ...replyCountUpdate,
-        channelId: data.channelId,
-      })
-    } else if (data.conversationId) {
-      socket.to(`conversation:${data.conversationId}`).emit('thread-reply-count-update', {
-        ...replyCountUpdate,
-        conversationId: data.conversationId,
-      })
+        // Emit reply count update
+        const updateData = {
+          messageId: data.replyToId,
+          replyCount,
+          ...(data.channelId ? { channelId: data.channelId } : { conversationId: data.conversationId })
+        };
+
+        if (data.channelId) {
+          io.to(`channel:${data.channelId}`).emit('thread-reply-count-update', updateData);
+        } else if (data.conversationId) {
+          io.to(`conversation:${data.conversationId}`).emit('thread-reply-count-update', updateData);
+        }
+        io.to(`thread:${data.replyToId}`).emit('thread-reply-count-update', updateData);
+      } catch (error) {
+        console.error('Error updating reply count:', error);
+        // Send a fallback reply count update based on the data we have
+        const fallbackUpdate = {
+          messageId: data.replyToId,
+          replyCount: 1, // Increment by 1 since we know we just added a reply
+          ...(data.channelId ? { channelId: data.channelId } : { conversationId: data.conversationId })
+        };
+        
+        if (data.channelId) {
+          io.to(`channel:${data.channelId}`).emit('thread-reply-count-update', fallbackUpdate);
+        } else if (data.conversationId) {
+          io.to(`conversation:${data.conversationId}`).emit('thread-reply-count-update', fallbackUpdate);
+        }
+        io.to(`thread:${data.replyToId}`).emit('thread-reply-count-update', fallbackUpdate);
+      }
+    } catch (error) {
+      console.error('Error handling thread reply:', error);
     }
-  })
+  });
 
   // Handle channel creation
   socket.on('channel-created', channel => {
