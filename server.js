@@ -7,10 +7,21 @@ const port = process.env.SOCKET_PORT || 3001
 const clientUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 const prisma = new PrismaClient()
 
+const allowedOrigins = [
+  process.env.NEXT_PUBLIC_APP_URL,
+  'http://localhost:3000',
+  'http://clash.rileybird.com',
+  'https://clash.rileybird.com',
+  'http://35.155.123.176'
+].filter(Boolean)
+
 // Create a basic HTTP server
 const httpServer = createServer((req, res) => {
+  const origin = req.headers.origin
   // Basic CORS headers for HTTP endpoints if needed
-  res.setHeader('Access-Control-Allow-Origin', clientUrl)
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin)
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cookie')
   res.setHeader('Access-Control-Allow-Credentials', 'true')
@@ -29,7 +40,7 @@ const httpServer = createServer((req, res) => {
 // Initialize Socket.IO
 const io = new Server(httpServer, {
   cors: {
-    origin: clientUrl,
+    origin: allowedOrigins,
     methods: ['GET', 'POST'],
     credentials: true,
     allowedHeaders: ['cookie', 'Cookie', 'authorization', 'Authorization', 'content-type'],
