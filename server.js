@@ -185,7 +185,7 @@ io.on('connection', async socket => {
 })
 
 // Start the server
-httpServer.listen(port, () => {
+httpServer.listen(port, '0.0.0.0', () => {
   console.log(`Socket.IO server running on port ${port}`)
   console.log(`Accepting connections from: ${clientUrl}`)
 })

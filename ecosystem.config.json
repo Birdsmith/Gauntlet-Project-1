@@ -1,0 +1,22 @@
+{
+  "apps": [
+    {
+      "name": "next-server",
+      "script": "server-next.js",
+      "cwd": "./",
+      "env": {
+        "NODE_ENV": "production",
+        "PORT": "3000"
+      }
+    },
+    {
+      "name": "socket-server",
+      "script": "npm",
+      "args": "run socket",
+      "cwd": "./",
+      "env": {
+        "NODE_ENV": "production"
+      }
+    }
+  ]
+} 
