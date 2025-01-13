@@ -231,6 +231,11 @@ io.on('connection', async socket => {
       console.error('Error updating user status on disconnect:', error)
     }
   })
+
+  // Handle ping messages for heartbeat
+  socket.on('ping', () => {
+    socket.emit('pong')
+  })
 })
 
 // Start the server

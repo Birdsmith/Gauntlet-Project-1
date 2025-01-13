@@ -54,9 +54,11 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession()
   const [isConnected, setIsConnected] = useState<boolean>(false)
   const reconnectAttempts = useRef(0)
-  const maxReconnectAttempts = 3
+  const maxReconnectAttempts = 10 // Increased from 3
   const connectionTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined)
   const socketRef = useRef<Socket | null>(null)
+  const heartbeatIntervalRef = useRef<NodeJS.Timeout | undefined>(undefined)
+  const lastPongRef = useRef<number>(Date.now())
 
   // Ensure we have the latest session state
   useEffect(() => {
@@ -86,6 +88,31 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         }
       }
     }
+  }, [])
+
+  // Heartbeat mechanism
+  const startHeartbeat = useCallback(() => {
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current)
+    }
+
+    heartbeatIntervalRef.current = setInterval(() => {
+      if (!socketRef.current?.connected) return
+
+      const now = Date.now()
+      const timeSinceLastPong = now - lastPongRef.current
+
+      // If no pong received in 45 seconds, consider connection dead
+      if (timeSinceLastPong > 45000) {
+        console.log('No pong received, reconnecting socket')
+        socketRef.current.disconnect()
+        socketRef.current.connect()
+        return
+      }
+
+      // Send ping every 30 seconds
+      socketRef.current.emit('ping')
+    }, 30000)
   }, [])
 
   /**
@@ -124,7 +151,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       reconnection: true,
       reconnectionAttempts: maxReconnectAttempts,
       reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
+      reconnectionDelayMax: 30000, // Increased max delay
       timeout: 20000,
       transports: ['websocket'],
       auth: {
@@ -137,6 +164,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       setIsConnected(true)
       isConnecting = false
       reconnectAttempts.current = 0
+      lastPongRef.current = Date.now()
+      startHeartbeat()
       processMessageQueue()
     })
 
@@ -144,6 +173,10 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       console.log('Socket disconnected:', reason)
       setIsConnected(false)
       isConnecting = false
+      
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current)
+      }
     })
 
     socket.on('connect_error', error => {
@@ -151,25 +184,38 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       setIsConnected(false)
       isConnecting = false
 
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current)
+      }
+
       if (reconnectAttempts.current < maxReconnectAttempts) {
         reconnectAttempts.current++
-        console.log(`Reconnection attempt ${reconnectAttempts.current}/${maxReconnectAttempts}`)
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000)
+        console.log(`Reconnection attempt ${reconnectAttempts.current}/${maxReconnectAttempts} in ${delay}ms`)
 
-        connectionTimeoutRef.current = setTimeout(
-          () => {
-            if (socket && session?.user?.id) {
-              socket.auth = { userId: session.user.id }
-              socket.connect()
-            }
-          },
-          1000 * Math.min(reconnectAttempts.current * 2, 10)
-        )
+        connectionTimeoutRef.current = setTimeout(() => {
+          if (socket && session?.user?.id) {
+            socket.auth = { userId: session.user.id }
+            socket.connect()
+          }
+        }, delay)
+      } else {
+        console.error('Max reconnection attempts reached')
       }
+    })
+
+    socket.on('pong', () => {
+      lastPongRef.current = Date.now()
+    })
+
+    socket.on('error', (error) => {
+      console.error('Socket error:', error)
+      // Don't disconnect on every error, let the heartbeat mechanism handle dead connections
     })
 
     socketRef.current = socket
     return socket
-  }, [session?.user?.id, status, processMessageQueue])
+  }, [session?.user?.id, status, processMessageQueue, startHeartbeat])
 
   /**
    * Initiates socket connection if conditions are met:
@@ -222,14 +268,14 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         console.error('No socket instance available')
         messageQueue.push({ event, data })
         console.log('Message queued due to no socket:', event)
-        resolve() // Resolve anyway since we queued the message
+        resolve()
         return
       }
 
       if (!socketRef.current.connected) {
         console.log('Socket not connected, queueing message:', event)
         messageQueue.push({ event, data })
-        resolve() // Resolve since we queued the message
+        resolve()
         return
       }
 
@@ -240,7 +286,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       } catch (error) {
         console.error('Error sending message:', error)
         messageQueue.push({ event, data })
-        resolve() // Resolve since we queued the message
+        resolve()
       }
     })
   }, [])
@@ -250,6 +296,9 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     return () => {
       if (connectionTimeoutRef.current) {
         clearTimeout(connectionTimeoutRef.current)
+      }
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current)
       }
       if (socketRef.current) {
         console.log('Cleaning up socket connection')
