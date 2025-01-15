@@ -67,7 +67,7 @@ export function UserSettings() {
             onCheckedChange={setAvatarEnabled}
           />
           <Label htmlFor="avatar-mode">
-            Enable AI Avatar (responds to messages when you're offline)
+            Enable AI Avatar (responds to messages when you&apos;re offline)
           </Label>
         </div>
 

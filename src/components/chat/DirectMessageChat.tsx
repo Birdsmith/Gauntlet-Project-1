@@ -379,29 +379,29 @@ export default function DirectMessageChat({
         isConnected,
         conversationId,
         userId: session?.user?.id,
-      })
-      return
+      });
+      return;
     }
 
-    console.log('Setting up socket event handlers for conversation:', conversationId)
+    console.log('Setting up socket event handlers for conversation:', conversationId);
 
     const handlers = {
       handleDirectMessageReceived: (message: DirectMessage) => {
-        console.log('Direct message received:', message)
+        console.log('Direct message received:', message);
         if (message.conversationId !== conversationId) {
-          console.log('Message not for this conversation, ignoring')
-          return
+          console.log('Message not for this conversation, ignoring');
+          return;
         }
         if (message.userId === session.user.id) {
-          console.log('Message from self, ignoring')
-          return
+          console.log('Message from self, ignoring');
+          return;
         }
 
         requestAnimationFrame(() => {
-          console.log('Dispatching received message')
-          dispatch({ type: 'ADD_MESSAGE', message })
-          scrollToBottom()
-        })
+          console.log('Dispatching received message');
+          dispatch({ type: 'ADD_MESSAGE', message });
+          scrollToBottom();
+        });
       },
 
       handleReactionReceived: (data: ReactionEvent) => {
@@ -505,7 +505,7 @@ export default function DirectMessageChat({
       socket.off('reaction_removed', handlers.handleReactionRemoved)
       socket.off('thread-reply-count-update', handlers.handleThreadReplyCountUpdate)
     }
-  }, [socket, isConnected, conversationId, session?.user?.id])
+  }, [socket, isConnected, conversationId, session?.user?.id, toast]);
 
   // Fetch initial messages with AbortController for cleanup
   useEffect(() => {

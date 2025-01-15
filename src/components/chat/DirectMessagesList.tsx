@@ -44,7 +44,7 @@ export function DirectMessagesList() {
   const { toast } = useToast()
   const router = useRouter()
   const [isCollapsed, setIsCollapsed] = useState(false)
-  const { socket } = useSocket()
+  const { socket, isConnected } = useSocket()
 
   useEffect(() => {
     if (session?.user) {
@@ -151,6 +151,28 @@ export function DirectMessagesList() {
       socket.off('user-status', handleUserStatus)
     }
   }, [socket])
+
+  useEffect(() => {
+    if (!socket || !isConnected) {
+      return;
+    }
+
+    const handleConversationCreated = () => {
+      fetchConversations();
+    };
+
+    const handleConversationUpdated = () => {
+      fetchConversations();
+    };
+
+    socket.on('conversation-created', handleConversationCreated);
+    socket.on('conversation-updated', handleConversationUpdated);
+
+    return () => {
+      socket.off('conversation-created', handleConversationCreated);
+      socket.off('conversation-updated', handleConversationUpdated);
+    };
+  }, [socket, isConnected, fetchConversations]);
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto bg-gray-800 p-2">
