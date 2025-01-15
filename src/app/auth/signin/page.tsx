@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { signIn } from 'next-auth/react'
+import { signIn, useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
@@ -13,6 +13,13 @@ export default function SignIn() {
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { data: session, status } = useSession()
+
+  useEffect(() => {
+    if (status === 'authenticated') {
+      router.push('/')
+    }
+  }, [status, router])
 
   useEffect(() => {
     if (searchParams?.get('registered') === 'true') {
@@ -31,7 +38,10 @@ export default function SignIn() {
         email,
         password,
         redirect: false,
+        callbackUrl: '/'
       })
+
+      console.log('Sign in result:', result)
 
       if (result?.error) {
         setError('Invalid email or password')
@@ -41,9 +51,9 @@ export default function SignIn() {
 
       if (result?.ok) {
         router.push('/')
-        router.refresh()
       }
     } catch (error) {
+      console.error('Sign in error:', error)
       setError('An error occurred during sign in')
     } finally {
       setIsLoading(false)
@@ -88,6 +98,7 @@ export default function SignIn() {
               placeholder="Enter your email"
               required
               disabled={isLoading}
+              autoComplete="email"
             />
           </div>
 
@@ -103,6 +114,7 @@ export default function SignIn() {
               placeholder="Enter your password"
               required
               disabled={isLoading}
+              autoComplete="current-password"
             />
           </div>
 

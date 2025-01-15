@@ -16,7 +16,7 @@ import { SocketErrorBoundary } from '@/components/ErrorBoundary'
 
 export default function Home() {
   const router = useRouter()
-  const { data: session } = useSession()
+  const { data: session, status } = useSession()
   const searchParams = useSearchParams()
   const channelId = searchParams?.get('channel') || null
   const conversationId = searchParams?.get('conversation') || null
@@ -30,6 +30,24 @@ export default function Home() {
       isOnline: boolean
     }
   } | null>(null)
+
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.push('/auth/signin')
+    }
+  }, [status, router])
+
+  if (status === 'loading') {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-900">
+        <div className="text-white">Loading...</div>
+      </div>
+    )
+  }
+
+  if (!session) {
+    return null
+  }
 
   useEffect(() => {
     async function fetchConversation() {
