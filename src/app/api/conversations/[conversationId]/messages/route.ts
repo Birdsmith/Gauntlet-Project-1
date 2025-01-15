@@ -77,93 +77,56 @@ export async function GET(req: Request, { params }: { params: { conversationId: 
   }
 }
 
-export async function POST(req: Request, { params }: { params: { conversationId: string } }) {
+export async function POST(
+  req: Request,
+  { params }: { params: { conversationId: string } }
+) {
   try {
-    const session = await getServerSession(authOptions)
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) {
+      return new NextResponse("Unauthorized", { status: 401 });
     }
 
-    const conversation = await prisma.conversation.findUnique({
-      where: {
-        id: params.conversationId,
-      },
-      include: {
-        participants: true,
-      },
-    })
+    const body = await req.json();
+    const { content, file, isAvatarMessage, avatarName } = body;
 
-    if (!conversation) {
-      return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+    if (!content && !file) {
+      return new NextResponse("Missing content", { status: 400 });
     }
 
-    const isParticipant = conversation.participants.some(
-      participant => participant.userId === session.user.id
-    )
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+    });
 
-    if (!isParticipant) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!user) {
+      return new NextResponse("User not found", { status: 404 });
     }
 
-    let content = ''
-    let fileData = null
-
-    // Handle both FormData and JSON requests
-    const contentType = req.headers.get('content-type') || ''
-    if (contentType.includes('multipart/form-data')) {
-      const formData = await req.formData()
-      content = (formData.get('content') as string) || ''
-      const file = formData.get('file') as File
-      if (file) {
-        const bytes = await file.arrayBuffer()
-        const buffer = Buffer.from(bytes)
-
-        // Ensure uploads directory exists
-        const uploadDir = path.join(process.cwd(), 'public', 'uploads')
-        if (!existsSync(uploadDir)) {
-          await mkdir(uploadDir, { recursive: true })
-        }
-
-        // Generate unique filename
-        const uniqueFilename = `${Date.now()}-${Math.random().toString(36).substr(2, 6)}${path.extname(file.name)}`
-        const filePath = path.join(uploadDir, uniqueFilename)
-
-        // Save file
-        await writeFile(filePath, buffer)
-
-        fileData = {
-          name: file.name,
-          url: `/uploads/${uniqueFilename}`,
-          size: buffer.length,
-          type: file.type,
-        }
-      }
-    } else {
-      const json = await req.json()
-      content = json.content || ''
-      fileData = json.file
+    // For avatar messages, we'll use the recipient's ID
+    let messageUserId = user.id;
+    if (isAvatarMessage) {
+      const participants = await prisma.conversationParticipant.findMany({
+        where: { conversationId: params.conversationId },
+        select: { userId: true },
+      });
+      // Find the other user's ID (not the sender)
+      messageUserId = participants.find(p => p.userId !== user.id)?.userId || user.id;
     }
 
-    if (!content && !fileData) {
-      return NextResponse.json({ error: 'Message content or file is required' }, { status: 400 })
-    }
-
-    // Create the message with optional file
+    // Create the message
     const message = await prisma.directMessage.create({
       data: {
         content,
         conversationId: params.conversationId,
-        userId: session.user.id,
-        ...(fileData && {
-          files: {
-            create: {
-              name: fileData.name,
-              url: fileData.url,
-              size: fileData.size,
-              type: fileData.type,
-            },
-          },
-        }),
+        userId: messageUserId,
+        files: file ? {
+          create: {
+            name: file.name,
+            url: file.url,
+            size: file.size,
+            type: file.type,
+          }
+        } : undefined,
       },
       include: {
         user: {
@@ -171,15 +134,21 @@ export async function POST(req: Request, { params }: { params: { conversationId:
             id: true,
             name: true,
             image: true,
-          },
+          }
         },
         files: true,
-      },
-    })
+      }
+    });
 
-    return NextResponse.json(message)
+    // Update conversation
+    await prisma.conversation.update({
+      where: { id: params.conversationId },
+      data: { updatedAt: new Date() },
+    });
+
+    return NextResponse.json({ ...message, isAvatarMessage, avatarName });
   } catch (error) {
-    console.error('Message creation error:', error)
-    return NextResponse.json({ error: 'Failed to create message' }, { status: 500 })
+    console.error('[MESSAGES_POST]', error);
+    return new NextResponse("Internal Error", { status: 500 });
   }
 }

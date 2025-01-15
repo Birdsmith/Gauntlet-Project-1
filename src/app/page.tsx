@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
 import { signOut } from 'next-auth/react'
-import { LogOut } from 'lucide-react'
+import { LogOut, Settings } from 'lucide-react'
 import ChannelList from '@/components/chat/ChannelList'
 import { DirectMessagesList } from '@/components/chat/DirectMessagesList'
 import ChatArea from '@/components/chat/ChatArea'
@@ -75,15 +75,26 @@ export default function Home() {
           {/* Header with branding */}
           <div className="flex h-12 items-center justify-between px-4 border-b border-gray-700 bg-gray-800">
             <h1 className="text-xl font-bold text-white">ChatGenius</h1>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => signOut({ callbackUrl: '/auth/signin' })}
-              className="text-gray-400 hover:text-white"
-              title="Logout"
-            >
-              <LogOut className="h-5 w-5" />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => router.push('/settings')}
+                className="text-gray-400 hover:text-white"
+                title="Settings"
+              >
+                <Settings className="h-5 w-5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => signOut({ callbackUrl: '/auth/signin' })}
+                className="text-gray-400 hover:text-white"
+                title="Logout"
+              >
+                <LogOut className="h-5 w-5" />
+              </Button>
+            </div>
           </div>
 
           <ScrollArea className="flex-1">

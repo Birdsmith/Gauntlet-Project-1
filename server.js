@@ -186,11 +186,19 @@ io.on('connection', async socket => {
     io.to(`channel:${message.channelId}`).emit('message_received', message)
   })
 
-  // Handle direct messages
-  socket.on('new_direct_message', async message => {
-    console.log('Received new direct message:', message)
-    socket.to(`conversation:${message.conversationId}`).emit('direct_message_received', message)
-  })
+  // Handle new direct message
+  socket.on('new_direct_message', async (message) => {
+    try {
+      console.log('Broadcasting new direct message:', message);
+      
+      // Broadcast to all users in the conversation
+      if (message.conversationId) {
+        io.to(`conversation:${message.conversationId}`).emit('new_direct_message', message);
+      }
+    } catch (error) {
+      console.error('Error broadcasting direct message:', error);
+    }
+  });
 
   // Handle joining conversations
   socket.on('join_conversation', conversationId => {

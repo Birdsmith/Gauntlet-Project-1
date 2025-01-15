@@ -244,11 +244,14 @@ const Message = memo(
     conversationId,
     onThreadSelect,
   }: {
-    message: DirectMessage
+    message: DirectMessage & { isAvatarMessage?: boolean; avatarName?: string }
     conversationId: string
     onThreadSelect: (message: DirectMessage) => void
   }) => {
+    const { data: session } = useSession()
     const dispatch = useMessageDispatch()
+    const isOwn = message.userId === session?.user?.id
+    const hasThread = message.replyCount && message.replyCount > 0
 
     const handleReactionAdd = useCallback(
       (reaction: Reaction) => {
@@ -266,15 +269,25 @@ const Message = memo(
 
     return (
       <div
-        id={`message-${message.id}`}
-        className="group relative flex items-start space-x-3 hover:bg-gray-800/50 px-2 py-1 rounded transition-colors duration-200"
+        className={cn(
+          'group relative flex gap-3 px-4 py-2 hover:bg-gray-800/50',
+          isOwn && 'flex-row-reverse'
+        )}
       >
         <UserAvatar user={message.user} />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start gap-2">
-            <span className="font-medium text-white">{message.user.name}</span>
-            <span className="text-xs text-gray-400 mt-1">
-              {new Date(message.createdAt).toLocaleString()}
+        <div className={cn('flex flex-col', isOwn && 'items-end')}>
+          <div className="flex items-center gap-2">
+            {message.isAvatarMessage ? (
+              <span className="text-sm font-medium text-indigo-400">
+                {message.avatarName || 'AI Avatar'}
+              </span>
+            ) : (
+              <span className="text-sm font-medium text-gray-300">
+                {message.user.name || 'Unknown User'}
+              </span>
+            )}
+            <span className="text-xs text-gray-500">
+              {new Date(message.createdAt).toLocaleTimeString()}
             </span>
           </div>
           <p className="text-gray-100 whitespace-pre-wrap break-words">{message.content}</p>
@@ -479,7 +492,7 @@ export default function DirectMessageChat({
     })
 
     // Set up event listeners
-    socket.on('direct_message_received', handlers.handleDirectMessageReceived)
+    socket.on('new_direct_message', handlers.handleDirectMessageReceived)
     socket.on('reaction_received', handlers.handleReactionReceived)
     socket.on('reaction_removed', handlers.handleReactionRemoved)
     socket.on('thread-reply-count-update', handlers.handleThreadReplyCountUpdate)
@@ -487,7 +500,7 @@ export default function DirectMessageChat({
     return () => {
       console.log('Cleaning up socket event handlers')
       socket.off('connect', joinConversation)
-      socket.off('direct_message_received', handlers.handleDirectMessageReceived)
+      socket.off('new_direct_message', handlers.handleDirectMessageReceived)
       socket.off('reaction_received', handlers.handleReactionReceived)
       socket.off('reaction_removed', handlers.handleReactionRemoved)
       socket.off('thread-reply-count-update', handlers.handleThreadReplyCountUpdate)
@@ -659,9 +672,12 @@ export default function DirectMessageChat({
     e.preventDefault()
     if (!newMessage.trim() && !selectedFile) return
 
-    try {
-      setIsSending(true)
+    setIsSending(true)
+    const currentMessage = newMessage
+    setNewMessage('')
+    setSelectedFile(null)
 
+    try {
       // Ensure socket is connected
       if (!isConnected) {
         console.log('Socket not connected, connecting...')
@@ -692,7 +708,7 @@ export default function DirectMessageChat({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          content: newMessage.trim(),
+          content: currentMessage.trim(),
           file: fileData,
         }),
       })
@@ -719,17 +735,74 @@ export default function DirectMessageChat({
         console.warn('Socket not available for real-time message')
       }
 
-      setNewMessage('')
-      setSelectedFile(null)
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''
+      // Get AI response if avatar is enabled
+      try {
+        // First check if the user has avatar enabled
+        console.log('Checking if user has avatar enabled:', otherUser.id);
+        const userResponse = await fetch(`/api/users/${otherUser.id}`);
+        const userData = await userResponse.json();
+        console.log('User data received:', userData);
+        
+        if (userData.avatarEnabled) {
+          console.log('Avatar is enabled, getting response');
+          const avatarResponse = await fetch('/api/avatar-bot/respond', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              recipientId: otherUser.id,
+              message: currentMessage,
+            }),
+          });
+
+          console.log('Avatar response status:', avatarResponse.status);
+          if (avatarResponse.ok) {
+            const { response, avatarName } = await avatarResponse.json();
+            console.log('Got avatar response:', response, 'with name:', avatarName);
+            
+            // Emit the avatar's response as a new message
+            if (response) {
+              setTimeout(async () => {
+                // First save the avatar's response as a direct message
+                const avatarMessageResponse = await fetch(`/api/conversations/${conversationId}/messages`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    content: response,
+                    isAvatarMessage: true,
+                    avatarName,
+                  }),
+                });
+
+                if (avatarMessageResponse.ok) {
+                  const savedMessage = await avatarMessageResponse.json();
+                  console.log('Avatar response saved as message:', savedMessage);
+                  
+                  // Then emit via socket for real-time update
+                  socket?.emit('new_direct_message', {
+                    ...savedMessage,
+                    conversationId,
+                    isAvatarMessage: true,
+                    avatarName,
+                  });
+                } else {
+                  console.error('Failed to save avatar response:', await avatarMessageResponse.text());
+                }
+              }, 1000); // Keep the delay for natural feeling
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Failed to get avatar response:', error);
       }
-      scrollToBottom()
     } catch (error) {
       console.error('Error sending message:', error)
       toast({
         title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to send message',
+        description: 'Failed to send message. Please try again.',
         variant: 'destructive',
       })
     } finally {
