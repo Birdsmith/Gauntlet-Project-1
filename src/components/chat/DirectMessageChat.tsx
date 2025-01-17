@@ -434,11 +434,54 @@ export default function DirectMessageChat({
       // Emit the new message through socket
       await sendMessage('new_direct_message', message)
 
-      // Clear input and files
+      // Clear input and files immediately after sending
       setNewMessage('')
       setSelectedFiles([])
       setIsEmojiPickerOpen(false)
-      
+
+      // Check if recipient is offline and has AI avatar enabled
+      if (!otherUser.isOnline) {
+        try {
+          const avatarResponse = await fetch('/api/avatar-bot/respond', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              recipientId: otherUser.id,
+              message: newMessage,
+              conversationId,
+            }),
+          })
+
+          if (avatarResponse.ok) {
+            const avatarData = await avatarResponse.json()
+            console.log('AI Avatar response:', avatarData)
+            
+            // Emit the avatar's response through socket
+            if (avatarData) {
+              const avatarMessage = {
+                id: avatarData.id,
+                content: avatarData.response,
+                conversationId,
+                userId: otherUser.id,
+                isAvatarMessage: true,
+                avatarName: avatarData.avatarName,
+                avatarVideoUrl: avatarData.videoUrl,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                user: otherUser,
+                files: [],
+                reactions: []
+              }
+              await sendMessage('new_direct_message', avatarMessage)
+            }
+          }
+        } catch (error) {
+          console.error('Error getting AI avatar response:', error)
+        }
+      }
+
     } catch (error) {
       console.error('Error sending message:', error)
       toast({

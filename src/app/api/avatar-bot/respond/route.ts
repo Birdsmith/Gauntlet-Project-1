@@ -188,6 +188,7 @@ export async function POST(req: Request) {
     }
 
     const responseData = {
+      id: avatarMessage.id,
       response: response.content,
       avatarName: `${recipient.name}'s Avatar`,
       videoUrl: response.videoUrl
