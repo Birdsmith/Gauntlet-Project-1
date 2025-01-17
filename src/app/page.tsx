@@ -37,18 +37,6 @@ export default function Home() {
     }
   }, [status, router])
 
-  if (status === 'loading') {
-    return (
-      <div className="flex h-screen items-center justify-center bg-gray-900">
-        <div className="text-white">Loading...</div>
-      </div>
-    )
-  }
-
-  if (!session) {
-    return null
-  }
-
   useEffect(() => {
     async function fetchConversation() {
       if (!conversationId || !session?.user?.id) return
@@ -84,6 +72,18 @@ export default function Home() {
       setCurrentConversation(null)
     }
   }, [searchParams])
+
+  if (status === 'loading') {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-900">
+        <div className="text-white">Loading...</div>
+      </div>
+    )
+  }
+
+  if (!session) {
+    return null
+  }
 
   return (
     <main className="flex h-screen bg-gray-900">

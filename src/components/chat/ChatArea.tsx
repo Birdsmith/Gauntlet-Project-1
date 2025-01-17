@@ -9,7 +9,7 @@ import { EmojiPicker } from './EmojiPicker'
 import { ThreadView } from './ThreadView'
 import { cn } from '@/lib/utils'
 import { MessageReactions } from './MessageReactions'
-import type { ChannelMessage, Channel, FileAttachment, Reaction, ReactionEvent } from '@/types/chat'
+import type { Message, Channel, FileAttachment, Reaction, ReactionEvent } from '@/types/chat'
 import { SearchBar } from './SearchBar'
 import { Virtuoso } from 'react-virtuoso'
 
@@ -31,13 +31,13 @@ interface ChatAreaProps {
 
 // Message reducer to batch updates
 type MessageAction =
-  | { type: 'SET_MESSAGES'; messages: ChannelMessage[] }
-  | { type: 'ADD_MESSAGE'; message: ChannelMessage }
+  | { type: 'SET_MESSAGES'; messages: Message[] }
+  | { type: 'ADD_MESSAGE'; message: Message }
   | { type: 'UPDATE_REACTION'; messageId: string; reaction: Reaction }
   | { type: 'REMOVE_REACTION'; messageId: string; reactionId: string }
   | { type: 'UPDATE_REPLY_COUNT'; messageId: string; replyCount: number }
 
-function messageReducer(state: ChannelMessage[], action: MessageAction): ChannelMessage[] {
+function messageReducer(state: Message[], action: MessageAction): Message[] {
   switch (action.type) {
     case 'SET_MESSAGES':
       return action.messages
@@ -121,9 +121,9 @@ const Message = memo(
     onReactionAdd,
     onReactionRemove,
   }: {
-    message: ChannelMessage
+    message: Message
     channelId: string
-    onThreadSelect: (message: ChannelMessage) => void
+    onThreadSelect: (message: Message) => void
     onReactionAdd: (messageId: string, reaction: Reaction) => void
     onReactionRemove: (messageId: string, reactionId: string) => void
   }) => {
@@ -240,7 +240,7 @@ export default function ChatArea({ channelId }: ChatAreaProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [isFilePickerOpen, setIsFilePickerOpen] = useState(false)
-  const [selectedThread, setSelectedThread] = useState<ChannelMessage | null>(null)
+  const [selectedThread, setSelectedThread] = useState<Message | null>(null)
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -358,7 +358,7 @@ export default function ChatArea({ channelId }: ChatAreaProps) {
     })
   }, [])
 
-  const handleThreadSelect = useCallback((message: ChannelMessage) => {
+  const handleThreadSelect = useCallback((message: Message) => {
     setSelectedThread(message)
   }, [])
 
@@ -383,7 +383,7 @@ export default function ChatArea({ channelId }: ChatAreaProps) {
       <Virtuoso
         style={{ height: 'calc(100vh - 8rem)' }}
         data={messages}
-        itemContent={(index: number, message: ChannelMessage) => (
+        itemContent={(index: number, message: Message) => (
           <Message
             key={message.id}
             message={message}
@@ -462,7 +462,7 @@ export default function ChatArea({ channelId }: ChatAreaProps) {
     }
 
     const handlers = {
-      handleMessageReceived: (message: ChannelMessage) => {
+      handleMessageReceived: (message: Message) => {
         if (message.channelId !== channelId) return
         if (message.userId === session.user.id) return
 
@@ -636,7 +636,7 @@ export default function ChatArea({ channelId }: ChatAreaProps) {
         throw new Error(error.error || 'Failed to send message')
       }
 
-      const sentMessage: ChannelMessage = await response.json()
+      const sentMessage: Message = await response.json()
 
       // Update local state
       dispatch({ type: 'ADD_MESSAGE', message: sentMessage })

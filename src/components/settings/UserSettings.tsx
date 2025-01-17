@@ -239,7 +239,7 @@ export function UserSettings() {
           <div className="mb-6">
             <h3 className="text-2xl font-medium text-white">AI Avatar Settings</h3>
             <p className="text-gray-400">
-              Configure your AI avatar to respond on your behalf when you're offline.
+              Configure your AI avatar to respond on your behalf when you&apos;re offline.
             </p>
           </div>
 
@@ -249,7 +249,7 @@ export function UserSettings() {
                 <div>
                   <Label htmlFor="avatar-toggle" className="text-white text-lg">Enable AI Avatar</Label>
                   <p className="text-gray-400 mt-1">
-                    Allow the AI to respond to messages when you're offline
+                    Allow the AI to respond to messages when you&apos;re offline
                   </p>
                 </div>
                 <Switch
