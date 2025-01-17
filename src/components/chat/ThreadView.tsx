@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { useToast } from '@/components/ui/use-toast'
 import { EmojiPicker } from './EmojiPicker'
 import { MessageReactions } from './MessageReactions'
+import type { Message as ChatMessage, DirectMessage, User as ChatUser } from '@/types/chat'
 
 interface User {
   id: string
@@ -48,13 +49,13 @@ interface Reaction {
 }
 
 interface ThreadViewProps {
-  parentMessage: Message
-  isOpen: boolean
-  onClose: () => void
-  isDirectMessage?: boolean
-  conversationId?: string
-  channelId?: string
-  onParentUpdate?: (message: Message) => void
+  parentMessage: ChatMessage | DirectMessage;
+  isOpen: boolean;
+  onClose: () => void;
+  isDirectMessage?: boolean;
+  conversationId?: string;
+  channelId?: string;
+  onParentUpdate?: (message: ChatMessage | DirectMessage) => void;
 }
 
 const ALLOWED_FILE_TYPES = [

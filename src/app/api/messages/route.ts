@@ -2,9 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
-import { writeFile, mkdir } from 'fs/promises'
-import path from 'path'
-import { existsSync } from 'fs'
+import { uploadToS3, getS3Url } from '@/lib/s3-operations'
 
 const ALLOWED_FILE_TYPES = [
   'image/jpeg',
@@ -27,76 +25,111 @@ export async function POST(req: Request) {
 
     const formData = await req.formData()
     const content = formData.get('content') as string
-    const channelId = formData.get('channelId') as string
-    const file = formData.get('file') as File | null
+    const channelId = formData.get('channelId') as string | null
+    const conversationId = formData.get('conversationId') as string | null
+    const files = formData.getAll('files') as File[]
 
-    if (!content?.trim() && !file) {
+    if (!content?.trim() && files.length === 0) {
       return NextResponse.json({ error: 'Message content or file is required' }, { status: 400 })
     }
 
-    let uploadedFilename: string | undefined
+    if (!channelId && !conversationId) {
+      return NextResponse.json(
+        { error: 'Either channelId or conversationId is required' },
+        { status: 400 }
+      )
+    }
 
-    if (file) {
-      // Validate file type
-      if (!ALLOWED_FILE_TYPES.includes(file.type)) {
-        return NextResponse.json({ error: 'File type not allowed' }, { status: 400 })
-      }
+    let fileDataArray: { name: string; size: number; type: string; url: string }[] = []
 
-      // Validate file size
-      if (file.size > MAX_FILE_SIZE) {
-        return NextResponse.json({ error: 'File size exceeds 5MB limit' }, { status: 400 })
-      }
+    // Handle file uploads
+    if (files.length > 0) {
+      for (const file of files) {
+        // Validate file type
+        if (!ALLOWED_FILE_TYPES.includes(file.type)) {
+          return NextResponse.json({ error: 'File type not allowed' }, { status: 400 })
+        }
 
-      // Create uploads directory if it doesn't exist
-      const uploadsDir = path.join(process.cwd(), 'public', 'uploads')
-      if (!existsSync(uploadsDir)) {
-        await mkdir(uploadsDir, { recursive: true })
-      }
+        // Validate file size
+        if (file.size > MAX_FILE_SIZE) {
+          return NextResponse.json({ error: 'File size exceeds 5MB limit' }, { status: 400 })
+        }
 
-      try {
-        // Generate unique filename
-        const ext = file.name.split('.').pop()
-        uploadedFilename = `${Date.now()}-${Math.random().toString(36).substring(7)}.${ext}`
-        const arrayBuffer = await file.arrayBuffer()
-        const buffer = Buffer.from(arrayBuffer)
+        try {
+          // Generate unique filename
+          const timestamp = Date.now()
+          const filename = `${session.user.id}-${timestamp}-${file.name}`
+          const key = `uploads/${session.user.id}/${filename}`
 
-        // Save the file
-        await writeFile(path.join(uploadsDir, uploadedFilename), buffer)
-      } catch (error) {
-        console.error('Error handling file upload:', error)
-        return NextResponse.json({ error: 'Failed to upload file' }, { status: 500 })
+          // Convert file to buffer and upload to S3
+          const arrayBuffer = await file.arrayBuffer()
+          const buffer = Buffer.from(arrayBuffer)
+          await uploadToS3(buffer, key, true)
+
+          // Get the S3 URL
+          const url = getS3Url(key)
+
+          fileDataArray.push({
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            url,
+          })
+        } catch (error) {
+          console.error('Error handling file upload:', error)
+          return NextResponse.json({ error: 'Failed to upload file' }, { status: 500 })
+        }
       }
     }
 
-    const message = await prisma.message.create({
-      data: {
-        content: content?.trim() || '',
-        channelId,
-        userId: session.user.id,
-        ...(uploadedFilename && {
+    // Create message based on type (channel or direct)
+    if (channelId) {
+      const message = await prisma.message.create({
+        data: {
+          content: content?.trim() || '',
+          channelId,
+          userId: session.user.id,
           files: {
-            create: {
-              name: file!.name,
-              size: file!.size,
-              type: file!.type,
-              url: `/uploads/${uploadedFilename}`,
-            },
-          },
-        }),
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            image: true,
+            create: fileDataArray,
           },
         },
-        files: true,
-      },
-    })
-
-    return NextResponse.json(message)
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              image: true,
+            },
+          },
+          files: true,
+          reactions: true,
+        },
+      })
+      return NextResponse.json(message)
+    } else {
+      const message = await prisma.directMessage.create({
+        data: {
+          content: content?.trim() || '',
+          conversationId: conversationId!,
+          userId: session.user.id,
+          files: {
+            create: fileDataArray,
+          },
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              image: true,
+            },
+          },
+          files: true,
+          reactions: true,
+        },
+      })
+      return NextResponse.json(message)
+    }
   } catch (error) {
     console.error('Error creating message:', error)
     return NextResponse.json({ error: 'Failed to create message' }, { status: 500 })

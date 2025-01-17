@@ -24,6 +24,7 @@ import { MessageReactions } from './MessageReactions'
 import type { DirectMessage, User, FileAttachment, Reaction, ReactionEvent } from '@/types/chat'
 import { SearchBar } from './SearchBar'
 import { Virtuoso } from 'react-virtuoso'
+import { Socket } from 'socket.io-client'
 
 // Constants
 const ALLOWED_FILE_TYPES = [
@@ -98,7 +99,8 @@ const FilePreview = ({ file, onRemove }: { file: File; onRemove: () => void }) =
       </div>
     ) : (
       <div className="relative group">
-        <div className="flex items-center gap-2 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-300">
+        <div className="flex items-center gap-2 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-300 hover:border-gray-600 hover:text-white"
+        >
           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
               strokeLinecap="round"
@@ -196,7 +198,7 @@ MessageAttachment.displayName = 'MessageAttachment'
 // Message reducer to batch updates
 type MessageAction =
   | { type: 'SET_MESSAGES'; messages: DirectMessage[] }
-  | { type: 'ADD_MESSAGE'; message: DirectMessage }
+  | { type: 'CHECK_AND_ADD_MESSAGE'; message: DirectMessage }
   | { type: 'UPDATE_REACTION'; messageId: string; reaction: Reaction }
   | { type: 'REMOVE_REACTION'; messageId: string; reactionId: string }
   | { type: 'UPDATE_REPLY_COUNT'; messageId: string; replyCount: number }
@@ -205,7 +207,7 @@ function messageReducer(state: DirectMessage[], action: MessageAction): DirectMe
   switch (action.type) {
     case 'SET_MESSAGES':
       return action.messages
-    case 'ADD_MESSAGE':
+    case 'CHECK_AND_ADD_MESSAGE':
       if (state.some(m => m.id === action.message.id)) return state
       return [...state, action.message]
     case 'UPDATE_REACTION':
@@ -244,7 +246,7 @@ const Message = memo(
     conversationId,
     onThreadSelect,
   }: {
-    message: DirectMessage & { isAvatarMessage?: boolean; avatarName?: string }
+    message: DirectMessage & { isAvatarMessage?: boolean; avatarName?: string; avatarVideoUrl?: string }
     conversationId: string
     onThreadSelect: (message: DirectMessage) => void
   }) => {
@@ -290,7 +292,25 @@ const Message = memo(
               {new Date(message.createdAt).toLocaleTimeString()}
             </span>
           </div>
-          <p className="text-gray-100 whitespace-pre-wrap break-words">{message.content}</p>
+          {message.isAvatarMessage && message.avatarVideoUrl ? (
+            <div className="mt-2 max-w-sm">
+              <video
+                src={message.avatarVideoUrl}
+                controls
+                className="rounded-lg w-full"
+                style={{ maxHeight: '384px' }}
+              >
+                Your browser does not support the video tag.
+              </video>
+              <p className="mt-2 text-gray-100 whitespace-pre-wrap break-words">
+                {message.content}
+              </p>
+            </div>
+          ) : (
+            <p className="text-gray-100 whitespace-pre-wrap break-words">
+              {message.content}
+            </p>
+          )}
           {message.files?.map(file => <MessageAttachment key={file.id} file={file} />)}
           {/* Reactions and Reply button */}
           <div className="mt-1 flex items-center gap-2">
@@ -350,162 +370,86 @@ export default function DirectMessageChat({
   otherUser: initialOtherUser,
 }: DirectMessageChatProps) {
   const { data: session } = useSession()
+  const { socket, sendMessage } = useSocket()
+  const { toast } = useToast()
   const [messages, dispatch] = useReducer(messageReducer, [])
-  const [newMessage, setNewMessage] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [isSending, setIsSending] = useState(false)
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [newMessage, setNewMessage] = useState('')
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [isDragging, setIsDragging] = useState(false)
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false)
-  const [selectedThread, setSelectedThread] = useState<DirectMessage | null>(null)
   const [otherUser, setOtherUser] = useState(initialOtherUser)
-  const { toast } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const { socket, isConnected, sendMessage, connect } = useSocket()
+  const [selectedMessage, setSelectedMessage] = useState<DirectMessage | null>(null)
 
-  // Connect socket when component mounts
   useEffect(() => {
-    if (!isConnected) {
-      connect()
-    }
-  }, [isConnected, connect])
+    if (!socket || !conversationId) return
 
-  // Update socket event handling
-  useEffect(() => {
-    if (!socket || !isConnected || !conversationId || !session?.user?.id) {
-      console.log('Socket prerequisites not met:', {
-        hasSocket: !!socket,
-        isConnected,
-        conversationId,
-        userId: session?.user?.id,
-      });
-      return;
+    // Join the conversation room
+    sendMessage('join_conversation', conversationId)
+
+    // Listen for new messages
+    const handleDirectMessage = (message: DirectMessage) => {
+      dispatch({ type: 'CHECK_AND_ADD_MESSAGE', message })
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
 
-    console.log('Setting up socket event handlers for conversation:', conversationId);
+    // Subscribe to direct message events
+    socket.on('direct_message_received', handleDirectMessage)
 
-    const handlers = {
-      handleDirectMessageReceived: (message: DirectMessage) => {
-        console.log('Direct message received:', message);
-        if (message.conversationId !== conversationId) {
-          console.log('Message not for this conversation, ignoring');
-          return;
-        }
-        if (message.userId === session.user.id) {
-          console.log('Message from self, ignoring');
-          return;
-        }
-
-        requestAnimationFrame(() => {
-          console.log('Dispatching received message');
-          dispatch({ type: 'ADD_MESSAGE', message });
-          scrollToBottom();
-        });
-      },
-
-      handleReactionReceived: (data: ReactionEvent) => {
-        console.log('Reaction received:', data)
-        if (data.conversationId !== conversationId) {
-          console.log('Reaction not for this conversation, ignoring')
-          return
-        }
-        if (data.userId === session.user.id) {
-          console.log('Reaction from self, ignoring')
-          return
-        }
-
-        const targetMessageId = data.directMessageId || data.messageId
-        if (!targetMessageId) {
-          console.log('No target message ID, ignoring')
-          return
-        }
-
-        const newReaction: Reaction = {
-          id: data.id,
-          emoji: data.emoji,
-          userId: data.userId,
-          user: data.user,
-          messageId: targetMessageId,
-        }
-
-        requestAnimationFrame(() => {
-          console.log('Dispatching received reaction')
-          dispatch({ type: 'UPDATE_REACTION', messageId: targetMessageId, reaction: newReaction })
-        })
-      },
-
-      handleReactionRemoved: (data: {
-        reactionId: string
-        messageId: string
-        conversationId: string
-      }) => {
-        console.log('Reaction removed:', data)
-        if (data.conversationId !== conversationId) {
-          console.log('Reaction removal not for this conversation, ignoring')
-          return
-        }
-
-        requestAnimationFrame(() => {
-          console.log('Dispatching reaction removal')
-          dispatch({
-            type: 'REMOVE_REACTION',
-            messageId: data.messageId,
-            reactionId: data.reactionId,
-          })
-        })
-      },
-
-      handleThreadReplyCountUpdate: (update: {
-        messageId: string
-        replyCount: number
-        conversationId: string
-      }) => {
-        console.log('Thread reply count update:', update)
-        if (update.conversationId !== conversationId) {
-          console.log('Thread update not for this conversation, ignoring')
-          return
-        }
-
-        requestAnimationFrame(() => {
-          console.log('Dispatching thread reply count update')
-          dispatch({
-            type: 'UPDATE_REPLY_COUNT',
-            messageId: update.messageId,
-            replyCount: update.replyCount,
-          })
-        })
-      },
-    }
-
-    // Join conversation when socket connects
-    const joinConversation = () => {
-      console.log('Joining conversation:', conversationId)
-      socket.emit('join_conversation', conversationId)
-    }
-
-    // Join immediately and also handle reconnections
-    joinConversation()
-    socket.on('connect', () => {
-      console.log('Socket connected, joining conversation')
-      joinConversation()
-    })
-
-    // Set up event listeners
-    socket.on('new_direct_message', handlers.handleDirectMessageReceived)
-    socket.on('reaction_received', handlers.handleReactionReceived)
-    socket.on('reaction_removed', handlers.handleReactionRemoved)
-    socket.on('thread-reply-count-update', handlers.handleThreadReplyCountUpdate)
-
+    // Cleanup
     return () => {
-      console.log('Cleaning up socket event handlers')
-      socket.off('connect', joinConversation)
-      socket.off('new_direct_message', handlers.handleDirectMessageReceived)
-      socket.off('reaction_received', handlers.handleReactionReceived)
-      socket.off('reaction_removed', handlers.handleReactionRemoved)
-      socket.off('thread-reply-count-update', handlers.handleThreadReplyCountUpdate)
+      socket.off('direct_message_received', handleDirectMessage)
+      sendMessage('leave_conversation', conversationId)
     }
-  }, [socket, isConnected, conversationId, session?.user?.id, toast]);
+  }, [socket, conversationId, sendMessage])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newMessage.trim() && selectedFiles.length === 0) return
+    if (!session?.user?.id) return
+
+    setIsSending(true)
+    try {
+      const formData = new FormData()
+      formData.append('content', newMessage)
+      formData.append('conversationId', conversationId)
+      
+      // Handle file uploads
+      for (const file of selectedFiles) {
+        formData.append('files', file)
+      }
+
+      const response = await fetch('/api/messages', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) throw new Error('Failed to send message')
+
+      const message = await response.json()
+
+      // Emit the new message through socket
+      await sendMessage('new_direct_message', message)
+
+      // Clear input and files
+      setNewMessage('')
+      setSelectedFiles([])
+      setIsEmojiPickerOpen(false)
+      
+    } catch (error) {
+      console.error('Error sending message:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to send message. Please try again.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsSending(false)
+    }
+  }
 
   // Fetch initial messages with AbortController for cleanup
   useEffect(() => {
@@ -571,7 +515,7 @@ export default function DirectMessageChat({
             key={message.id}
             message={message}
             conversationId={conversationId}
-            onThreadSelect={setSelectedThread}
+            onThreadSelect={setSelectedMessage}
           />
         )}
         initialTopMostItemIndex={messages.length - 1}
@@ -589,19 +533,12 @@ export default function DirectMessageChat({
 
   // File handling
   const handleFileSelect = (file: File) => {
-    if (!file) {
-      toast({
-        title: 'Error',
-        description: 'No file selected',
-        variant: 'destructive',
-      })
-      return
-    }
+    if (!file) return
 
     if (!ALLOWED_FILE_TYPES.includes(file.type)) {
       toast({
-        title: 'Error',
-        description: `File type not supported. Allowed types: ${ALLOWED_FILE_TYPES.map(type => type.split('/')[1]).join(', ')}`,
+        title: 'Invalid file type',
+        description: 'Please upload an image, PDF, or document file.',
         variant: 'destructive',
       })
       return
@@ -609,14 +546,14 @@ export default function DirectMessageChat({
 
     if (file.size > MAX_FILE_SIZE) {
       toast({
-        title: 'Error',
-        description: `File size must be less than ${MAX_FILE_SIZE / (1024 * 1024)}MB`,
+        title: 'File too large',
+        description: 'Please upload a file smaller than 5MB.',
         variant: 'destructive',
       })
       return
     }
 
-    setSelectedFile(file)
+    setSelectedFiles(prev => [...prev, file])
   }
 
   // Enhanced drag and drop handling
@@ -638,176 +575,13 @@ export default function DirectMessageChat({
     e.preventDefault()
     setIsDragging(false)
 
-    const files = Array.from(e.dataTransfer.files)
-    const validFiles = files.filter(file => ALLOWED_FILE_TYPES.includes(file.type))
-
-    if (validFiles.length === 0) {
-      toast({
-        title: 'Error',
-        description: `File type not supported. Allowed types: ${ALLOWED_FILE_TYPES.map(type => type.split('/')[1]).join(', ')}`,
-        variant: 'destructive',
-      })
-      return
-    }
-
-    if (validFiles[0].size > MAX_FILE_SIZE) {
-      toast({
-        title: 'Error',
-        description: `File size must be less than ${MAX_FILE_SIZE / (1024 * 1024)}MB`,
-        variant: 'destructive',
-      })
-      return
-    }
-
-    handleFileSelect(validFiles[0])
+    const file = e.dataTransfer.files[0]
+    if (file) handleFileSelect(file)
   }
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) handleFileSelect(file)
-  }
-
-  // Message handling
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newMessage.trim() && !selectedFile) return
-
-    setIsSending(true)
-    const currentMessage = newMessage
-    setNewMessage('')
-    setSelectedFile(null)
-
-    try {
-      // Ensure socket is connected
-      if (!isConnected) {
-        console.log('Socket not connected, connecting...')
-        connect()
-      }
-
-      let fileData: { name: string; url: string; size: number; type: string } | null = null
-
-      if (selectedFile) {
-        const formData = new FormData()
-        formData.append('file', selectedFile)
-        const response = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
-        })
-
-        if (!response.ok) {
-          throw new Error('Failed to upload file')
-        }
-
-        fileData = await response.json()
-      }
-
-      // Send to server via API
-      const response = await fetch(`/api/conversations/${conversationId}/messages`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          content: currentMessage.trim(),
-          file: fileData,
-        }),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to send message')
-      }
-
-      const sentMessage: DirectMessage = await response.json()
-      console.log('Message sent successfully:', sentMessage)
-
-      // Update local state immediately
-      dispatch({ type: 'ADD_MESSAGE', message: sentMessage })
-
-      // Emit via socket for real-time
-      if (socket && isConnected) {
-        console.log('Emitting message via socket')
-        await sendMessage('new_direct_message', {
-          ...sentMessage,
-          conversationId,
-        })
-      } else {
-        console.warn('Socket not available for real-time message')
-      }
-
-      // Get AI response if avatar is enabled
-      try {
-        // First check if the user has avatar enabled
-        console.log('Checking if user has avatar enabled:', otherUser.id);
-        const userResponse = await fetch(`/api/users/${otherUser.id}`);
-        const userData = await userResponse.json();
-        console.log('User data received:', userData);
-        
-        if (userData.avatarEnabled) {
-          console.log('Avatar is enabled, getting response');
-          const avatarResponse = await fetch('/api/avatar-bot/respond', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              recipientId: otherUser.id,
-              message: currentMessage,
-            }),
-          });
-
-          console.log('Avatar response status:', avatarResponse.status);
-          if (avatarResponse.ok) {
-            const { response, avatarName } = await avatarResponse.json();
-            console.log('Got avatar response:', response, 'with name:', avatarName);
-            
-            // Emit the avatar's response as a new message
-            if (response) {
-              setTimeout(async () => {
-                // First save the avatar's response as a direct message
-                const avatarMessageResponse = await fetch(`/api/conversations/${conversationId}/messages`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-                    content: response,
-                    isAvatarMessage: true,
-                    avatarName,
-                  }),
-                });
-
-                if (avatarMessageResponse.ok) {
-                  const savedMessage = await avatarMessageResponse.json();
-                  console.log('Avatar response saved as message:', savedMessage);
-                  
-                  // Then emit via socket for real-time update
-                  socket?.emit('new_direct_message', {
-                    ...savedMessage,
-                    conversationId,
-                    isAvatarMessage: true,
-                    avatarName,
-                  });
-                } else {
-                  console.error('Failed to save avatar response:', await avatarMessageResponse.text());
-                }
-              }, 1000); // Keep the delay for natural feeling
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Failed to get avatar response:', error);
-      }
-    } catch (error) {
-      console.error('Error sending message:', error)
-      toast({
-        title: 'Error',
-        description: 'Failed to send message. Please try again.',
-        variant: 'destructive',
-      })
-    } finally {
-      setIsSending(false)
-    }
   }
 
   // Auto-scroll
@@ -913,12 +687,12 @@ export default function DirectMessageChat({
         {/* Message input */}
         <div className="border-t border-gray-700 p-4">
           <form onSubmit={handleSubmit} className="flex flex-col space-y-2">
-            {selectedFile && (
-              <div className="flex items-center gap-2 rounded-md bg-gray-700 p-2">
-                <span className="text-sm text-gray-300">{selectedFile.name}</span>
+            {selectedFiles.map(file => (
+              <div key={file.name} className="flex items-center gap-2 rounded-md bg-gray-700 p-2">
+                <span className="text-sm text-gray-300">{file.name}</span>
                 <button
                   type="button"
-                  onClick={() => setSelectedFile(null)}
+                  onClick={() => setSelectedFiles(prev => prev.filter(f => f !== file))}
                   className="ml-auto rounded-full p-1 text-gray-400 hover:bg-gray-600 hover:text-gray-300"
                 >
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -931,7 +705,7 @@ export default function DirectMessageChat({
                   </svg>
                 </button>
               </div>
-            )}
+            ))}
             <div
               className={cn(
                 'relative flex items-center rounded-md bg-gray-700',
@@ -971,7 +745,7 @@ export default function DirectMessageChat({
               />
               <button
                 type="submit"
-                disabled={(!newMessage.trim() && !selectedFile) || isSending}
+                disabled={(!newMessage.trim() && selectedFiles.length === 0) || isSending}
                 className={cn(
                   'px-4 text-gray-400 hover:text-gray-300',
                   isSending && 'opacity-50 cursor-not-allowed'
@@ -984,11 +758,11 @@ export default function DirectMessageChat({
         </div>
 
         {/* Thread panel */}
-        {selectedThread && (
+        {selectedMessage && (
           <ThreadView
-            parentMessage={selectedThread}
+            parentMessage={selectedMessage as DirectMessage}
             isOpen={true}
-            onClose={() => setSelectedThread(null)}
+            onClose={() => setSelectedMessage(null)}
             isDirectMessage={true}
             conversationId={conversationId}
           />

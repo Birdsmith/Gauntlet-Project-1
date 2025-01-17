@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { writeFile, mkdir } from 'fs/promises'
-import { existsSync } from 'fs'
-import path from 'path'
+import { uploadToS3, getS3Url } from '@/lib/s3-operations'
 
 const ALLOWED_FILE_TYPES = [
   'image/jpeg',
@@ -42,28 +40,26 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'File size exceeds 5MB limit' }, { status: 400 })
     }
 
-    // Create uploads directory if it doesn't exist
-    const uploadsDir = path.join(process.cwd(), 'public', 'uploads')
-    if (!existsSync(uploadsDir)) {
-      await mkdir(uploadsDir, { recursive: true })
-    }
-
     try {
       // Generate unique filename
-      const ext = file.name.split('.').pop()
-      const filename = `${session.user.id}-${Date.now()}-${Math.random().toString(36).substring(7)}.${ext}`
+      const timestamp = Date.now()
+      const filename = `${session.user.id}-${timestamp}-${file.name}`
+      const key = `uploads/${session.user.id}/${filename}`
+
+      // Convert file to buffer and upload to S3
       const arrayBuffer = await file.arrayBuffer()
       const buffer = Buffer.from(arrayBuffer)
+      await uploadToS3(buffer, key, true)
 
-      // Save the file
-      await writeFile(path.join(uploadsDir, filename), buffer)
+      // Get the S3 URL
+      const url = getS3Url(key)
 
       // Return the file details
       return NextResponse.json({
         name: file.name,
         size: file.size,
         type: file.type,
-        url: `/uploads/${filename}`,
+        url,
       })
     } catch (error) {
       console.error('Error handling file upload:', error)

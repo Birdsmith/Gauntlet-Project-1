@@ -8,17 +8,25 @@ const fs = require('fs')
 const NODE_ENV = process.env.NODE_ENV || 'development'
 const envFile = NODE_ENV === 'production' ? '.env.production' : '.env.development'
 const envPath = path.resolve(process.cwd(), envFile)
+const envLocalPath = path.resolve(process.cwd(), '.env.local')
 
+// Load .env.local first if it exists (takes precedence)
+if (fs.existsSync(envLocalPath)) {
+  require('dotenv').config({ path: envLocalPath })
+}
+
+// Then load environment-specific file
 if (fs.existsSync(envPath)) {
   require('dotenv').config({ path: envPath })
 } else {
-  console.error(`Environment file ${envFile} not found!`)
-  process.exit(1)
+  console.warn(`Environment file ${envFile} not found, using .env.local only`)
 }
 
 const port = process.env.SOCKET_PORT || 3001
 const clientUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-const prisma = new PrismaClient()
+const prisma = new PrismaClient({
+  log: ['error']
+})
 
 const allowedOrigins = [
   process.env.NEXT_PUBLIC_APP_URL,
@@ -191,9 +199,9 @@ io.on('connection', async socket => {
     try {
       console.log('Broadcasting new direct message:', message);
       
-      // Broadcast to all users in the conversation
+      // Broadcast to all sockets in the conversation, including the sender
       if (message.conversationId) {
-        io.to(`conversation:${message.conversationId}`).emit('new_direct_message', message);
+        io.in(`conversation:${message.conversationId}`).emit('direct_message_received', message);
       }
     } catch (error) {
       console.error('Error broadcasting direct message:', error);
@@ -202,8 +210,13 @@ io.on('connection', async socket => {
 
   // Handle joining conversations
   socket.on('join_conversation', conversationId => {
-    console.log(`User ${socket.data.userId} joining conversation:`, conversationId)
-    socket.join(`conversation:${conversationId}`)
+    const roomName = `conversation:${conversationId}`;
+    if (socket.rooms.has(roomName)) {
+      console.log(`User ${socket.data.userId} already in conversation:`, conversationId);
+      return;
+    }
+    console.log(`User ${socket.data.userId} joining conversation:`, conversationId);
+    socket.join(roomName);
   })
 
   // Handle new reactions

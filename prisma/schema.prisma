@@ -1,5 +1,7 @@
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = []
+  log = []
 }
 
 datasource db {
@@ -48,7 +50,9 @@ model User {
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
   avatarEnabled Boolean    @default(false)
+  videoEnabled  Boolean    @default(false)  // Whether to generate videos for avatar responses
   avatarSystemPrompt String?   @db.Text
+  avatarImage   String?    @db.Text // URL to the user's avatar source image
   accounts      Account[]
   channels      Channel[]  @relation("CreatedChannels")
   messages      Message[]
@@ -169,6 +173,9 @@ model DirectMessage {
   userId         String
   isEdited      Boolean   @default(false)
   replyToId     String?
+  isAvatarMessage Boolean @default(false)
+  avatarName     String?
+  avatarVideoUrl String?   @db.Text // URL to the D-ID generated video
   
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)

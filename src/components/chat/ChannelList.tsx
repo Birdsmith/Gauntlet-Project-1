@@ -95,7 +95,12 @@ export default function ChannelList({ selectedChannel, onSelectChannel }: Channe
     e.preventDefault()
     setError('')
 
-    if (!newChannelName.trim() || !socket) {
+    if (!socket) {
+      setError('Socket connection not available. Please try again.')
+      return
+    }
+
+    if (!newChannelName.trim()) {
       setError('Channel name is required')
       return
     }
