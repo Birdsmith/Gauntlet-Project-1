@@ -92,7 +92,7 @@ export default function Home() {
         <div className="flex w-56 flex-col border-r border-gray-700 bg-gray-900">
           {/* Header with branding */}
           <div className="flex h-12 items-center justify-between px-4 border-b border-gray-700 bg-gray-800">
-            <h1 className="text-xl font-bold text-white">ChatGenius</h1>
+            <h1 className="text-xl font-bold text-white">Clash</h1>
             <div className="flex items-center gap-2">
               <Button
                 variant="ghost"

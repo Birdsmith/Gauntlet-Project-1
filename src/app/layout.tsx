@@ -10,7 +10,7 @@ import { SocketProvider } from '@/contexts/SocketContext'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'ChatGenius',
+  title: 'Clash',
   description: 'A modern chat application',
   icons: {
     icon: '/next.svg',
