@@ -151,8 +151,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       reconnection: true,
       reconnectionAttempts: maxReconnectAttempts,
       reconnectionDelay: 1000,
-      reconnectionDelayMax: 30000, // Increased max delay
-      timeout: 20000,
+      reconnectionDelayMax: 30000,
+      timeout: 30000,
       transports: ['websocket'],
       auth: {
         userId: session.user.id,

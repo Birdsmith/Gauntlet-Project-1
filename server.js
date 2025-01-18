@@ -66,7 +66,7 @@ const io = new Server(httpServer, {
     credentials: true,
     allowedHeaders: ['cookie', 'Cookie', 'authorization', 'Authorization', 'content-type'],
   },
-  transports: ['websocket', 'polling'],
+  transports: ['websocket'],
   allowEIO3: true,
 })
 
