@@ -106,7 +106,7 @@ export default function Home() {
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => signOut({ callbackUrl: '/auth/signin' })}
+                onClick={() => signOut({ callbackUrl: `${process.env.NEXT_PUBLIC_APP_URL}/auth/signin` })}
                 className="text-gray-400 hover:text-white"
                 title="Logout"
               >
