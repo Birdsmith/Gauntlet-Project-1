@@ -2,6 +2,16 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
+import { Message, User, Reaction, File } from '@prisma/client'
+
+type MessageWithRelations = Message & {
+  user: Pick<User, 'id' | 'name' | 'image'>;
+  reactions: (Reaction & {
+    user: Pick<User, 'id' | 'name' | 'image'>;
+  })[];
+  files: File[];
+  replies: { id: string }[];
+}
 
 export async function GET(req: Request, { params }: { params: { channelId: string } }) {
   try {
@@ -47,7 +57,7 @@ export async function GET(req: Request, { params }: { params: { channelId: strin
     })
 
     // Transform messages to include reply count
-    const transformedMessages = messages.map(message => ({
+    const transformedMessages = messages.map((message: MessageWithRelations) => ({
       ...message,
       replyCount: message.replies.length,
       replies: undefined, // Remove the replies array from the response

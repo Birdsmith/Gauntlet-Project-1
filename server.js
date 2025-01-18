@@ -28,14 +28,15 @@ const prisma = new PrismaClient({
   log: ['error']
 })
 
-const allowedOrigins = ['*']
+// Update allowedOrigins to use specific client URL
+const allowedOrigins = [clientUrl]
 
 // Create a basic HTTP server
 const httpServer = createServer((req, res) => {
   // Basic CORS headers for HTTP endpoints if needed
-  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Origin', clientUrl)
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE')
-  res.setHeader('Access-Control-Allow-Headers', '*')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cookie')
   res.setHeader('Access-Control-Allow-Credentials', 'true')
 
   if (req.method === 'OPTIONS') {
@@ -52,13 +53,15 @@ const httpServer = createServer((req, res) => {
 // Initialize Socket.IO
 const io = new Server(httpServer, {
   cors: {
-    origin: allowedOrigins,
+    origin: clientUrl,
     methods: ['GET', 'POST'],
     credentials: true,
     allowedHeaders: ['cookie', 'Cookie', 'authorization', 'Authorization', 'content-type'],
   },
   transports: ['websocket'],
   allowEIO3: true,
+  pingTimeout: 60000,
+  pingInterval: 25000,
 })
 
 // Socket.IO middleware for authentication

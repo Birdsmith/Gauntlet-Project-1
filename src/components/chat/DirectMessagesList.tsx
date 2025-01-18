@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
@@ -46,16 +46,7 @@ export function DirectMessagesList() {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const { socket, isConnected } = useSocket()
 
-  useEffect(() => {
-    if (session?.user) {
-      fetchConversations()
-    } else {
-      setConversations([])
-      setLoading(false)
-    }
-  }, [session])
-
-  const fetchConversations = async () => {
+  const fetchConversations = useCallback(async () => {
     if (!session?.user) return
 
     try {
@@ -74,7 +65,16 @@ export function DirectMessagesList() {
       })
       setLoading(false)
     }
-  }
+  }, [session?.user, toast])
+
+  useEffect(() => {
+    if (session?.user) {
+      fetchConversations()
+    } else {
+      setConversations([])
+      setLoading(false)
+    }
+  }, [session, fetchConversations])
 
   const handleSearch = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const query = e.target.value

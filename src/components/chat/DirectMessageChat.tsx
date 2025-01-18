@@ -533,7 +533,7 @@ export default function DirectMessageChat({
     return () => {
       abortController.abort()
     }
-  }, [conversationId])
+  }, [conversationId, toast])
 
   // Memoize the message list
   const MessageList = useMemo(() => {

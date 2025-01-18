@@ -53,21 +53,13 @@ let isConnecting = false
 export function SocketProvider({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession()
   const [isConnected, setIsConnected] = useState<boolean>(false)
+  const [sessionReady, setSessionReady] = useState<boolean>(false)
   const reconnectAttempts = useRef(0)
-  const maxReconnectAttempts = 10 // Increased from 3
+  const maxReconnectAttempts = 10
   const connectionTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined)
   const socketRef = useRef<Socket | null>(null)
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | undefined>(undefined)
   const lastPongRef = useRef<number>(Date.now())
-
-  // Ensure we have the latest session state
-  useEffect(() => {
-    console.log('Session state changed:', {
-      status,
-      userId: session?.user?.id,
-      isAuthenticated: status === 'authenticated',
-    })
-  }, [session, status])
 
   const processMessageQueue = useCallback(() => {
     if (!socketRef.current?.connected) {
@@ -90,7 +82,6 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  // Heartbeat mechanism
   const startHeartbeat = useCallback(() => {
     if (heartbeatIntervalRef.current) {
       clearInterval(heartbeatIntervalRef.current)
@@ -126,11 +117,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       return socketRef.current
     }
 
-    if (!session?.user?.id || status !== 'authenticated') {
-      console.log('Cannot setup socket: invalid session state', {
-        userId: session?.user?.id,
-        status,
-      })
+    if (!sessionReady) {
+      console.log('Cannot setup socket: session not ready')
       return null
     }
 
@@ -140,8 +128,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     }
 
     console.log('Setting up new socket connection', {
-      userId: session.user.id,
-      status,
+      userId: session?.user?.id,
+      sessionReady,
     })
 
     isConnecting = true
@@ -154,9 +142,11 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       reconnectionDelayMax: 30000,
       timeout: 30000,
       transports: ['websocket'],
+      forceNew: true,
       auth: {
-        userId: session.user.id,
+        userId: session?.user?.id,
       },
+      withCredentials: true,
     })
 
     socket.on('connect', () => {
@@ -215,7 +205,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
     socketRef.current = socket
     return socket
-  }, [session?.user?.id, status, processMessageQueue, startHeartbeat])
+  }, [session?.user?.id, sessionReady, processMessageQueue, startHeartbeat])
 
   /**
    * Initiates socket connection if conditions are met:
@@ -227,13 +217,12 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     console.log('Connect called, current state:', {
       hasSocket: !!socketRef.current,
       isConnected: socketRef.current?.connected,
-      userId: session?.user?.id,
-      status,
+      sessionReady,
       isConnecting,
     })
 
-    if (status !== 'authenticated' || !session?.user?.id) {
-      console.log('Cannot connect: invalid session state')
+    if (!sessionReady) {
+      console.log('Cannot connect: session not ready')
       return
     }
 
@@ -254,7 +243,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     } else {
       console.log('Failed to setup/get socket')
     }
-  }, [setupSocket, session?.user?.id, status])
+  }, [setupSocket, sessionReady])
 
   /**
    * Handles message sending with queuing mechanism for reliability:
@@ -290,6 +279,23 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       }
     })
   }, [])
+
+  // Track session state
+  useEffect(() => {
+    const isReady = status === 'authenticated' && !!session?.user?.id
+    console.log('Session state updated:', {
+      status,
+      userId: session?.user?.id,
+      isReady
+    })
+    setSessionReady(isReady)
+
+    // If session becomes ready and we don't have a connection, try to connect
+    if (isReady && !isConnected && !socketRef.current) {
+      console.log('Session ready, initiating connection')
+      connect()
+    }
+  }, [session, status, connect, isConnected])
 
   // Cleanup on unmount
   useEffect(() => {
