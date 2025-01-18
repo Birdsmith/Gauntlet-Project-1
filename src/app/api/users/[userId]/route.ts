@@ -57,7 +57,7 @@ export async function PATCH(
     if (contentType.includes('multipart/form-data')) {
       const formData = await req.formData();
       const name = formData.get('name');
-      const image = formData.get('image') as File;
+      const image = formData.get('image');
       const avatarEnabled = formData.get('avatarEnabled');
       const videoEnabled = formData.get('videoEnabled');
       const avatarSystemPrompt = formData.get('avatarSystemPrompt');
@@ -104,7 +104,7 @@ export async function PATCH(
     }
 
     // Handle image upload if present
-    if (image instanceof File) {
+    if (image && typeof image !== 'string') {
       const bytes = await image.arrayBuffer();
       const buffer = Buffer.from(bytes);
 

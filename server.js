@@ -28,23 +28,14 @@ const prisma = new PrismaClient({
   log: ['error']
 })
 
-const allowedOrigins = [
-  process.env.NEXT_PUBLIC_APP_URL,
-  'http://localhost:3000',
-  'http://clash.rileybird.com',
-  'https://clash.rileybird.com',
-  'http://35.155.123.176'
-].filter(Boolean)
+const allowedOrigins = ['*']
 
 // Create a basic HTTP server
 const httpServer = createServer((req, res) => {
-  const origin = req.headers.origin
   // Basic CORS headers for HTTP endpoints if needed
-  if (allowedOrigins.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin)
-  }
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cookie')
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE')
+  res.setHeader('Access-Control-Allow-Headers', '*')
   res.setHeader('Access-Control-Allow-Credentials', 'true')
 
   if (req.method === 'OPTIONS') {
